@@ -1,0 +1,1578 @@
+server {
+	listen 443 ssl;
+	include snippets/snakeoil.conf;
+	server_name nginx.crazyco.xyz;
+
+	location / {
+		add_header Content-Type text/html;
+		set $site '
+			<html style="background: #131516;">
+				<head>
+					<meta name=\'viewport\' content=\'width=device-width, initial-scale=1.0\'>
+					<meta htp-equiv=\'X-UA-Compatible\' content=\'IE=edge\'>
+
+					<title>Nginx file-less website</title>					
+					<meta name=\'description\' content=\'This site runs fully inside an nginx config. Cry about it!\'>
+					<meta property=\'og:image\' content=\'/embed.png\'>
+
+					<link rel=\'icon\' href=\'/favicon.ico\'>
+					<link rel="stylesheet" href="style.css">
+				</head>
+				<body style="text-align: left;">
+					<noscript>Please enable Javascript to view this page!</noscript>
+					<div class="title">
+						<h1>Nginx is awesome!</h1>
+					</div>
+
+					<div class="text-center">
+						Welcome to this very special Website. On first glance it just looks like a regular page, albeit more ugly than usual.
+						But under the hood there is a whole lot of... nothing, actually. 
+						<br><br>
+						This site runs fully from inside its nginx config. No files outside of it. HTML, CSS, JS, and even Perl for server-side code execution.
+						How that works will be explained a bit further down. First, lets have a look at what that file actually looks like:
+						<br><br><br>
+					</div>
+
+					<div>
+						<iframe src="/iframe"></iframe>
+						<br>
+					</div>
+
+					<div class="title">
+						<h1>Why are you doing this?</h1>
+					</div>
+					<div class="text-regular">
+						Well, I recently found myself in a weird situation. I am playing around with a closed-source proprietary web application, and had to fix some responses.
+						So I tried to decompile the apps code, which didnt work. Therefore I was left with a single option: <u>Figure out a way to rewrite the response coming from nginx</u>.
+						<br><br>
+						After some time, I found a solution: <code>sub_filter</code>. It lets me rewrite parts of the response and fix the app for my usecase. Scuffed, but it worked.
+						Now I wondered if it was possible to create a full website inside nginx. Since you read this, thats a yes. I set myself the goal to create it, so here we are.
+						<br><br><br>
+					</div>
+					<div class="title">
+						<h1>How does this work?</h1>
+					</div>
+					<div class="text-regular">
+						Its actually not too complicated, let me explain. If you have a look at the config, you will see that it starts like any normal config with:<br>
+						<br><pre>
+server {
+	listen 443 ssl;
+	include snippets/snakeoil.conf;
+	server_name nginx.crazyco.xyz;
+
+	location / {
+						</pre><br>
+						As you can see, thats a pretty regular start. Afterwards you can see <code>add_header Content-Type text/html;</code>, which simply adds a context header to tell
+						your browser what kind of data it is looking at. And then, theres this huge block, which is this page. We use <code>return 200\'text\'</code> for that.
+						Instead of serving a file, we return custom data.
+						<br><br><br>
+						The CSS and JS work the same, so lets not waste time on those. The next interesting piece is the iframe, as it runs server-side code. How that works you may ask?
+						<code>nginx-extras</code> is how it works. Its an additional module for nginx that makes that part of the magic work. It allows us, among many other things, to execute
+						Perl code. Lets have a look:<br>
+					';
+		set $site '
+						${site}
+						<br><pre style="white-space: pre-wrap;">
+location /iframe {
+	perl \'
+		sub {
+			my &#x24r = shift;
+			&#x24r->send_http_header("text/html");
+			&#x24r->print("<html><body style="color: white; text-align: center;">The user running this application is ");
+			&#x24r->print(`whoami`);
+			&#x24r->print(". Its running on a server called &ltu>");
+			&#x24r->print(`hostname`);
+			&#x24r->print("&lt/u>");
+			&#x24r->print("&ltbr>&ltbr>It is currently ");
+			&#x24r->print(`date`);
+			&#x24r->print("&ltbr>&ltbr>Here is this sites source-code / nginx config, embedded by itself:&ltbr>&lttextarea disabled rows="39" cols="118" style="resize: none;">");
+			&#x24r->print(`cat /etc/nginx/sites-available/nginx-site`);
+			&#x24r->print("&lt/textarea>&lt/body>&lt/html>");
+			return OK;
+			}
+		\'<wbr>;
+	}
+						</pre><br>
+						This code calls the <code>perl</code> function, which as I mentioned is available in the <code>nginx-extras</code> package. The perl package / function allows
+						you to run code on the server. This is what we do here with <code>whoami, hostname, date & cat</code>. The rest is just building a sentence and then returning OK.
+						<br><br><br>
+						The last part is the image assets, which are slightly weird. You see, nginx has a "parameter length" limit, which prevents you from adding insanely long strings,
+						probably to prevent buffer overflows. Well, turns out you can split them like you see here:<br>
+						<br><pre style="white-space: pre-wrap;">
+set &#x24<wbr>favicon \'&#x24{favicon}AAAAAAAAAAAAAIWzaZRppDD/YK<wbr>cA/1qsAP9WrgD/U64A/1OuAP9TrgD/U64A/1auAP9Xr\'<wbr>;
+set &#x24<wbr>favicon \'&#x24{favicon}QD/W6gA/3izQf80WgD/PlYP/z1<wbr>VDf89VQ3/PVUN/z9UFP9BVRz/OE0O/ztVGf8+Vxz/PU\'<wbr>;
+						</pre><br>
+						and that way you can bypass that stupid limit. I even had to do that for the HTML while i was editing it, as it had gotten too big. At the end of all that,
+						there is another bit of perl to return this wonky image so browsers and apps understand it:
+						<br><pre>
+perl \'
+	sub {
+		my &#x24r = shift;
+		&#x24r->send_http_header("image/x-icon");
+		use MIME::Base64;
+		&#x24r->print(decode_base64(&#x24r->variable("favicon")));
+		return OK;
+	}
+\'<wbr>;
+						</pre><br>
+						And that is how you serve a complete site from within nginx.
+						<br><br><br>
+						<div class="title">
+							<h1>Does this have any benefits?</h1>
+						</div>
+						Kind of. After thinking about it for a while, I realized this does have a few security benefits. For example, there is no hidden files that could be found,
+						no directory to escape out of, and it would also (i might be wrong here) harder to break any of the server-side code, since you have no way to see the code file
+						(security by obscurity). In theory this config also wouldnt need to exist, this could be piped into <code>nginx -c</code> from stdin, which would allow us
+						to create a user that has zero permissions on the filesystem for it. Those might not be all things, but its what I came up with.
+						<br><br>
+						Either way, this project was really fun to mess with. Thanks to WillyJL for figuring out the bypass for string length &lt3, and thanks to my community for
+						adding ideas on how this might work during the initial planning phase! 
+						<br><br><br>
+						<div class="title">
+							<h1>Thanks for reading &lt3</h1>
+						</div>
+					</div>
+					<script src="/js.js" async></script>
+				</body>
+			<html>
+		';
+		return 200 $site;
+	}
+
+	location /style.css {
+		add_header Content-Type text/css;
+		return 200 '
+			body {
+				text-align: left;
+				border-radius: 30px;
+				box-shadow: 0 1px 1px 0 rgba(0, 0, 0, 0.06), 0 2px 5px 0 rgba(0, 0, 0, 0.2);
+				margin: auto;
+				display: flex;
+				flex-direction: column;
+				max-width: 1000px;
+				background: black;
+				-webkit-appearance: none;
+				-moz-appearance: none;
+				appearance: none;
+			}
+
+			.title {
+				color: green;
+				margin: auto;
+				text-align: center;
+				padding: 10px;
+			}
+
+			.text-center {
+				margin-left: 5%;
+				margin-right: 5%;
+				text-align: center;
+				color: white;
+			}
+
+			.text-regular {
+				margin-left: 5%;
+				margin-right: 5%;
+				color: white;
+			}
+
+			pre {
+				white-space: pre-wrap;
+				background: #131516;
+			}
+
+			code {
+				background: #131516;
+			}
+
+			iframe {
+				border: 2px dashed green;
+				display: flex;
+				margin: auto;
+				width: 100%;
+				height: 700px;
+			}
+
+			a {
+				font-size: larger;
+				color: white;
+			}
+		';
+	}
+
+	location /js.js {
+		add_header Content-Type text/javascript;
+		return 200 '
+			for(let i = 0; i < 10; i++){
+				console.log("%cMeow Meow Meow!", "font: 50px sans-serif; font-weight:bold; color:red; -webkit-text-stroke:1px black;");
+				console.log("Why are you here?")
+			}
+		';
+	}
+
+	location /iframe {
+		perl '
+			sub {
+				my $r = shift;
+				$r->send_http_header("text/html");
+				$r->print("<html><body style=\'color: white; text-align: center;\'>The user running this application is ");
+				$r->print(`whoami`);
+				$r->print(". Its running on a server called <u>");
+				$r->print(`hostname`);
+				$r->print("</u>");
+				$r->print("<br><br>It is currently ");
+				$r->print(`date`);
+				$r->print("<br><br>Here is this sites source-code / nginx config, embedded by itself:<br><textarea disabled rows=\'39\' cols=\'118\' style=\'resize: none;\'>");
+				$r->print(`cat /etc/nginx/sites-available/nginx-site`);
+				$r->print("<\/textarea></body></html>");
+				return OK;
+			}
+		';
+	}
+
+	location /favicon.ico {
+		set $favicon '${favicon}AAABAAEAcnIAAAEAIABY0gAAFgAAACgAAAByAAAA5AAAAAEAIAAAAAAAEMsAACMuAAAjL';
+		set $favicon '${favicon}gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnb6KA4esbn6LqnhSAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAJGzfjhSfSz/VIQb/1OIB/9XhyH/UXok/2WFTf8AAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAXIRB/1OBKf9SiQv/SoQA/0+KAP9PhwD/VooP/1qGMP9TejT/fZpufgAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGqRTP9TgiD/VooP/0+';
+		set $favicon '${favicon}GAP9LhgD/UYwA/0yIAP9JhAD/TYYA/1GIB/9OhAn/TYAX/1J/Lv+JrHZbAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAB/oGedVX8l/1eID/9OhgD/SoYA/02LAP9LiAD/TYcA';
+		set $favicon '${favicon}/06IAP9MiQD/TIkA/0uIAP9LiQD/TIkA/0+HA/9Ogx7/WIQ9/wAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAlLZ/M1iCKv9UhQ3/UYYA/0+HAP9OiAD/S4kA/0uJAP9LiQD/TocA/06HAP9LiAD/S';
+		set $favicon '${favicon}4kA/0mKAP9JigD/SYkA/0mIAP9LhwD/ToQJ/1WBKf9tj0z/AAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABiiUP/UYAc/1GGA';
+		set $favicon '${favicon}P9PhwD/TogA/0uIAP9LiAD/S4kA/0uKAP9LiQD/S4cA/0uHAP9LiAD/SYkA/0mJAP9JiQ';
+		set $favicon '${favicon}D/SYkA/0mIAP9KhwD/UIoA/0p/AP9ZhyH/WX8x/3qWYbcAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcJNI/1iGH/9PgwX/UokL/06GCP9Lhgj/S4cA/0';
+		set $favicon '${favicon}uHAP9LiAD/S4kA/06JAP9LigD/S4oA/0mJAP9JiAD/SYgA/0mIAP9LhwD/S4gA/06JAP9';
+		set $favicon '${favicon}SjQD/UIgA/1KJC/9Lfgz/V4Uv/1iGM/9XgjP/i69xcQAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAIakaJhdhDD/VoUE/0+FAP9QigD/SYUA/0mHAP9Jhgj/SYYI/0mHAP9LhwD/S4k';
+		set $favicon '${favicon}A/06JAP9LigD/S4kA/0mIAP9JiAD/SYgA/0uHAP9LiAD/TokA/06JAP9MhQD/ToYA/0+G';
+		set $favicon '${favicon}AP9TiRj/ToUZ/0iBAP9PhwP/U4Ue/2OGQf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACdvoAvW4Qt/1eEI/9';
+		set $favicon '${favicon}Whh//T4MF/0+IAP9KhgD/SokA/0mIAP9JhwD/SYYI/0mGCP9LhwD/S4gA/06JAP9LiQD/';
+		set $favicon '${favicon}S4cA/0mGCP9LhwD/S4kA/02KAP9NigD/T4oA/0+JAP9OhwD/UooA/06HAP9KhAD/SoYA/';
+		set $favicon '${favicon}06JAP9MiwD/TYUA/1WEI/9YfzH/b5JX4wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGCFQP9UhQ3/TYUA/1CHA/9HgAD/UooP/0yI';
+		set $favicon '${favicon}AP9KhwD/S4oA/0mIAP9JiAD/SYcA/0mHAP9LhwD/S4cA/0uJAP9LiAD/S4cA/0uHAP9Li';
+		set $favicon '${favicon}AD/TokA/02KAP9NiwD/TokA/06JAP9MiAD/TogA/0+JAP9NigD/TIkA/0iHAP9JiAD/SY';
+		set $favicon '${favicon}gA/06HAP9NgwX/VIUs/1aAN/9/oWyHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAABzlFrWWoE0/1iHKf9Lhgj/SYgA/0uKAP9HhgD/SokA/02KAP9KiAD/S4kA/';
+		set $favicon '${favicon}0uJAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/TokA/0+IAP9PiAD/TokA/06IAP';
+		set $favicon '${favicon}9LiAD/SYgA/0mIAP9IiAD/R4cA/0uLAP9LiQD/TIoA/0uJAP9GhAD/TYsA/0aKAP9GiQD';
+		set $favicon '${favicon}/SYUA/1OKD/9SgR7/WoE5/5u2igMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiql2W1mAN/9Yh';
+		set $favicon '${favicon}SX/U4QA/06GAP9IhwD/SosA/0OGAP9KiQD/R4cA/0uLAP9LiQD/SogA/06JAP9OiQD/S4';
+		set $favicon '${favicon}kA/0uJAP9LiAD/S4gA/0mIAP9LiAD/T4kA/0+JAP9PiAD/TogA/0uHAP9LhwD/SYgA/0a';
+		set $favicon '${favicon}JAP9IhwD/SooA/0iIAP9IiAD/SYcA/0yKAP9SjQD/R4UA/0aKAP9GigD/SIgA/0mHAP9Q';
+		set $favicon '${favicon}iAD/VIQb/1h/Mf9lhE//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABhh0X/UYAc/1CFAP9PiAD/UIsA/06JAP';
+		set $favicon '${favicon}9LiAD/SYgA/0mIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD';
+		set $favicon '${favicon}/S4gA/0uIAP9LiAD/TokA/06JAP9OiAD/S4gA/0uIAP9LiAD/S4gA/0mIAP9LiAD/S4gA';
+		set $favicon '${favicon}/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiQD/S4gA/0uIAP9LiAD/TocA/0+FD';
+		set $favicon '${favicon}f9RhCD/VoEx/26RVucAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAZopS+VR/Lv9NgBL/UYkA/06JAP9JiAD/S4oA/0mIAP9LiQD/S4gA/0u';
+		set $favicon '${favicon}IAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9L';
+		set $favicon '${favicon}iAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S';
+		set $favicon '${favicon}4gA/0uIAP9LiAD/S4gA/06IAP9OiAD/S4gA/0uIAP9JiAD/SYgA/0uIAP9LhwD/T4YA/1';
+		set $favicon '${favicon}mIKv9VfS7/hqZwdQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHydYLtWfyz';
+		set $favicon '${favicon}/V4Ue/1GGAP9QiAD/UIkA/06HAP9MiAD/TokC/0mIAP9LiAD/S4gA/0uIAP9LiAD/S4gA';
+		set $favicon '${favicon}/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIA';
+		set $favicon '${favicon}P9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiA';
+		set $favicon '${favicon}D/S4gA/06IAP9OiAD/S4gA/0uIAP9JiQD/SYkA/0mJAP9LiAD/TYYA/06FAP9UgyL/WH8';
+		set $favicon '${favicon}x/1p7Qf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACTsXpJWn4t/1iEEf9WiAD/UYgA/0+IAP9O';
+		set $favicon '${favicon}iAD/TIgA/0yIAP9KhgD/R4QA/0qHDP9LhwD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S';
+		set $favicon '${favicon}4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0';
+		set $favicon '${favicon}uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/06IAP9';
+		set $favicon '${favicon}OiAD/S4gA/0uIAP9LiQD/SYkA/0mJAP9JiQD/TowA/0mEAP9SiQv/U4Ig/1eCM/9eg0D/';
+		set $favicon '${favicon}YoVN/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAGCFQv9YgiT/VoUE/1aJAP9PiQD/TokA/0uKAP9KhwD/SYgA/0qIA';
+		set $favicon '${favicon}P9HhQD/R4UA/02LCv9LhwD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiA';
+		set $favicon '${favicon}D/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4g';
+		set $favicon '${favicon}A/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/06IAP9OiAD/TogA/0uI';
+		set $favicon '${favicon}AP9LiQD/S4kA/0mKAP9JigD/R4gA/1GPAP9LhgD/UYoA/0qAC/9OgRr/VIQw/1V/Nv90l';
+		set $favicon '${favicon}VvRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABiikz/V';
+		set $favicon '${favicon}4Iz/1iHKf9PhAD/UIcA/1GLAP9LiAD/SYgA/0qIAP9IhwD/SYgA/0yLAP9MiwD/SYgA/0';
+		set $favicon '${favicon}eGAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9';
+		set $favicon '${favicon}LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/';
+		set $favicon '${favicon}S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/06IAP9OiAD/TogA/06IAP9LiQD/S4kA/';
+		set $favicon '${favicon}0mJAP9JigD/TI4A/0WIAP9KiQD/UI0A/0yJAP9MiAD/SIMA/1CHHf9XiSj/VH8s/4mrdV';
+		set $favicon '${favicon}8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAe6Nht1OEKv9Qhhv/TYQA/0uDAP9Qig';
+		set $favicon '${favicon}D/T4oA/0mGAP9LiAD/SokA/0uKAP9LiQL/SYgA/0WEAP9GhgD/SosA/0uMAP9LiQD/S4g';
+		set $favicon '${favicon}A/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uI';
+		set $favicon '${favicon}AP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9Li';
+		set $favicon '${favicon}AD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4kA/0uJAP9LigD/SY';
+		set $favicon '${favicon}sA/0iKAP9LjQD/R4gA/0eHAP9JiQD/S4oA/0iJAP9FhwD/RYMA/1OIJ/9Zgzv/n7uKAwA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAJi3gyJXgC3/UIQJ/0yFAP9MigD/TokA/02LAP9JhgD/UIwA/0eGAP9';
+		set $favicon '${favicon}LigD/SYgA/0aFAP9IhwD/TIsA/0qJAP9IiAD/SYoA/0qJAP9LiQD/S4gA/0uIAP9LiAD/';
+		set $favicon '${favicon}S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/';
+		set $favicon '${favicon}0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP';
+		set $favicon '${favicon}9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiQD/S4oA/0iJAP9OjwD';
+		set $favicon '${favicon}/RIYA/0uMAP9GigD/Q4cA/0aKAP9FigD/SYwA/0WEAP9SiBb/VoIq/22PTP8AAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY4h';
+		set $favicon '${favicon}E/1SAJ/9WhxP/UIgA/0uJAP9JiQD/S4kA/0mIAP9JiAD/SYgA/0mHAP9JiAD/SYgA/0mI';
+		set $favicon '${favicon}AP9LiQD/S4kA/0uJAP9LiQD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9Li';
+		set $favicon '${favicon}AD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4';
+		set $favicon '${favicon}gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0m';
+		set $favicon '${favicon}JAP9JiAD/SYgA/0mIAP9LhwD/S4cA/06HAP9OhwD/TogA/0uJAP9LiQD/SYkA/0mJAP9J';
+		set $favicon '${favicon}iQD/SYgA/0mIAP9FiAD/SYsA/0iHAP9KhwD/UYkA/0+DBf9ahjD/dJla1gAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG2RVudUfyz/W4wf/02CAP9QiAD/';
+		set $favicon '${favicon}SYQA/0uJAP9JiQD/SYgA/0mIAP9JhwD/SYcA/0mHAP9JiAD/SYgA/0mJAP9LigD/S4oA/';
+		set $favicon '${favicon}0uJAP9LiAD/TocA/06HAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP';
+		set $favicon '${favicon}9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD';
+		set $favicon '${favicon}/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0mJAP9JiQD/SYgA';
+		set $favicon '${favicon}/0mIAP9LhwD/S4cA/06GAP9OhgD/TocA/06IAP9LiAD/S4gA/0uIAP9JiAD/S4gA/0uIA';
+		set $favicon '${favicon}P9JhgD/TIkA/0qHAP9LiAD/UIwA/0uIAP9LgwD/U4kh/1WENf+Ls3lOAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAACHqG95VH8s/1WIFv9SigD/SIMA/1KMAP9PiQD/TIkA/0mJAP9Ji';
+		set $favicon '${favicon}QD/SYgA/0mHAP9Lhgj/S4YI/0uGCP9LhwD/S4gA/0uJAP9LigD/S4oA/06JAP9OiAD/To';
+		set $favicon '${favicon}cA/06HAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0u';
+		set $favicon '${favicon}IAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9L';
+		set $favicon '${favicon}iAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0mJAP9JiQD/SYgA/0mIAP9LhwD/S';
+		set $favicon '${favicon}4cA/06GCP9OhgD/ToYA/06HAP9OhwD/TocA/06HAP9LhwD/TocA/06HAP9PiAD/UIkA/0';
+		set $favicon '${favicon}2HAP9MhAD/TYcM/06ID/9Jhgj/R4UA/0uHAP9NgxT/XIo2/wAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}FuBNP9Vgxn/UooA/0uHAP9JiAD/TIoA/0qIAP9MiQD/SYYA/0mJAP9JiAD/SYgA/0mHAP';
+		set $favicon '${favicon}9Lhgj/S4YI/0uGCP9LhwD/S4cA/0uJAP9LigD/S4oA/06JAP9OiAD/TocA/06HAP9LiAD';
+		set $favicon '${favicon}/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA';
+		set $favicon '${favicon}/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIA';
+		set $favicon '${favicon}P9LiAD/S4gA/0uIAP9LiAD/S4gA/0uJAP9JiQD/SYgA/0mIAP9LhwD/S4cA/06GAP9Ohg';
+		set $favicon '${favicon}D/ToYA/06HAP9OhwD/TocA/06GAP9OhgD/ToYA/06HAP9PiAD/UIkA/1CIAP9NhQD/TIQ';
+		set $favicon '${favicon}A/02HDP9Niwr/S4oA/0aFAP9RjAX/TIEA/1aCKv9ylVvRAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0k2C7V4At/1aHDP9QiQD/T4';
+		set $favicon '${favicon}oA/0qJAP9JiQD/SYgA/0mIAP9PiwD/TIkA/0uJAP9LiQD/S4gA/0uHAP9LhwD/S4cA/0u';
+		set $favicon '${favicon}HAP9LhwD/S4cA/0uHAP9LiAD/S4kA/0uJAP9LiQD/S4gA/0uIAP9LiAD/S4gA/0uIAP9L';
+		set $favicon '${favicon}iAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S';
+		set $favicon '${favicon}4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0';
+		set $favicon '${favicon}uIAP9LiAD/S4gA/0uJAP9LiQD/S4gA/0uIAP9LhwD/S4cA/0uHAP9LhwD/S4cA/0uIAP9';
+		set $favicon '${favicon}LiAD/S4gA/06HAP9OhwD/ToYA/06HAP9NhwD/TYcA/0+JAP9QiQD/TYYA/0yFAP9LhwD/';
+		set $favicon '${favicon}SoYA/0uHAP9MhAD/ToQJ/1WHJf9SfSz/W4A8/5q5hRkAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAIKicHVVgy//TIMA/06JAP9MiwD/SIkA/0mGAP9KiQD';
+		set $favicon '${favicon}/TIgA/0qGAP9KhwD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uHAP9LhwD/S4cA';
+		set $favicon '${favicon}/0uHAP9LhwD/S4gA/0uIAP9LiQD/S4kA/0uJAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIA';
+		set $favicon '${favicon}P9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiA';
+		set $favicon '${favicon}D/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4g';
+		set $favicon '${favicon}A/06JAP9OiQD/TogA/0uIAP9LhwD/S4cA/0uHAP9LiAD/S4gA/0uJAP9LiAD/S4gA/0uI';
+		set $favicon '${favicon}AP9OhwD/TocA/06HAP9MiAD/SYYA/0uGAP9PiQD/T4oA/0qIAP9KiAD/SogA/0yIAP9Ph';
+		set $favicon '${favicon}wP/UogW/02AEv9Xgyz/WYAy/12AOv8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAHWjT/97s03/SooA/0aKAP9KjAD/R4UA/0+JE/9KhQT/SYIA/0uHAP9J';
+		set $favicon '${favicon}hgD/SocA/0uHAP9OhwD/TogA/06JAP9OiQD/TYoA/06JAP9OiQD/S4kA/0uIAP9LhwD/S';
+		set $favicon '${favicon}4cA/0mIAP9JiAD/SYkA/0mJAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0';
+		set $favicon '${favicon}uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9';
+		set $favicon '${favicon}LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/0uIAP9LiAD/S4gA/06JAP9OiQD/';
+		set $favicon '${favicon}TogA/06IAP9LiAD/S4gA/0mIAP9JiAD/SYkA/0mKAP9JiQD/SYkA/0mJAP9LiAD/S4gA/';
+		set $favicon '${favicon}0uHAP9OiQD/S4gA/0mGAP9KiAD/TIsA/0qMAP9KjAD/S40A/0qKAP9LiAD/SIEA/1SGH/';
+		set $favicon '${favicon}9Ygir/ZIg9/2uISP9SZzv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApcqI';
+		set $favicon '${favicon}DGihK/9kqQj/cbcx/2WtHv9DiAD/SYoA/0eFAP9Lhgj/T4oG/0uHAP9MiQD/S4gA/0uHA';
+		set $favicon '${favicon}P9OhgD/TogA/06JAP9LigD/TYoA/02KAP9NigD/S4oA/0uIAP9OhwD/ToYI/06FGf9OhR';
+		set $favicon '${favicon}n/T4UN/0+GAP9PhQ3/ToYI/0+FDf9OhgD/S4cA/0mIAP9JiQD/SYkA/0uIAP9LiAD/S4g';
+		set $favicon '${favicon}A/0uIAP9LiAD/S4gA/06IAP9LiAD/S4gA/0uIAP9LiQD/S4kA/0uIAP9LiAD/S4gA/0uI';
+		set $favicon '${favicon}AP9LiAD/S4gA/0uIAP9LiAD/S4cA/0uHAP9LhwD/TocA/1GGAP9UhQT/UYUN/1GFDf9Rh';
+		set $favicon '${favicon}Q3/T4UN/0+GAP9OhwD/S4gA/0mKAP9JigD/SYoA/0mJAP9JiQD/S4gA/0uIAP9IhwD/S4';
+		set $favicon '${favicon}sA/0qKAP9IiQD/S4oA/0mLAP9JiAD/SogA/0uGAP9QiAD/VokY/1WCIP9wk0v/P2EI/zt';
+		set $favicon '${favicon}XAv89UB//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W2SjGP9gqwD/W';
+		set $favicon '${favicon}qkA/1qpAP91vC7/XKEA/0SIAP9FiQD/TIsA/0ODAP9MiQD/S4gA/0uHAP9LhwD/S4YA/0';
+		set $favicon '${favicon}yJAP9GhQD/S4kA/1GKAP9PiQD/SokA/0uJAP9Wig//Tn4Y/1aCOv9Vfjr/aIpG/3CTS/9';
+		set $favicon '${favicon}dhDj/Un8u/1mDO/9PgCr/T4cD/0OHAP9EigD/RYsA/0mIAP9JiAD/S4kA/0uJAP9JiAD/';
+		set $favicon '${favicon}S4gA/0+HAP9OiAD/SYgA/0mJAP9JigD/SYoA/0mJAP9JiAD/S4cA/0uHAP9MiQD/SocA/';
+		set $favicon '${favicon}1GLAP9QiQD/TYUA/1CID/9LgwD/VYgW/1aAJ/9cgjX/ZIdD/3CRUv9niEj/WXw1/1uELf';
+		set $favicon '${favicon}9Vgxn/U4gH/0uHAP9NjAD/SYgA/0uKAP9KiQD/Uo0A/0uJAP9FiQD/RIoA/0mMAP9HhwD';
+		set $favicon '${favicon}/TYsA/1GLAP9MgwD/VYgW/1KBHv9dhjD/bZNG/0ptIf83VQD/Pl0J/zJOAP9BVCX/AAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrt2W2GmAP9brQD/V6sA/1qqAP9cqg';
+		set $favicon '${favicon}D/YawA/3u/Pv9JjwD/RIgA/0qNAP9HhQD/TYoA/0qGAP9QiwD/SoUA/0yJAP9IhwD/To0';
+		set $favicon '${favicon}A/06HAP9PiAD/S4oA/06IAP9PgQD/XIQz/4Wmc//S7sn/7//g//T/5v/u/9//v9+v/2yN';
+		set $favicon '${favicon}Wf9ZgT3/T4UN/0eHAP9NkgD/QogA/0aJAP9JiAD/S4kA/0uKAP9JiQD/S4gA/0+HAP9Ph';
+		set $favicon '${favicon}wD/S4gA/0mIAP9JiQD/SYkA/0mJAP9JiAD/S4gA/0uHAP9MiQD/SYYA/1CJAP9LgwD/UI';
+		set $favicon '${favicon}Yb/02AF/9XhS//gqln/8TgsP/k+9T/9P/q//T/6v/0/+j/4vjR/6vHlf9cgTv/VIEe/1S';
+		set $favicon '${favicon}LEv9OiAD/To0A/0uJAP9KiAD/S4cA/0qIAP9JjAD/RYsA/0uLAP9GgwD/UIkA/06ECf9X';
+		set $favicon '${favicon}hif/Un4k/2uQR/9afTb/OFkA/zdVAP87Vg//N1IG/0BbF/89UB//AAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAjrxzaGCnAP9brQD/V6sA/1qrAP9bqgD/XKsA/2CpAP9';
+		set $favicon '${favicon}psSL/crU0/0aKAP9KiwD/SogA/0mFAP9LhwD/T4kA/0+LAP9JiAD/SYgA/02GAP9QigD/';
+		set $favicon '${favicon}TokA/1GJAP9Zhif/mryF/+7/6v/z//T/9v/v//f/7//y/+n/8//q/+n/3P98m2n/UH4k/';
+		set $favicon '${favicon}1CJAP9EiAD/R4sA/0mIAP9LhwD/S4kA/0uKAP9JiQD/SYkA/06JAP9PiAD/S4gA/0uIAP';
+		set $favicon '${favicon}9LhwD/S4cA/0uJAP9LigD/SYoA/0mJAP9KiQD/SoYA/1GJC/9NgwX/VYQj/3WbVP/O7Lz';
+		set $favicon '${favicon}/8//s//H/8P/2//f/9v/3//b/9P/2//T/9f/z/+//6v/W8sn/ZY1Q/0+AKv9JggD/TokA';
+		set $favicon '${favicon}/0eGAP9HhgD/T4oA/06JAP9JiAD/SYkA/02GAP9NhAD/UoYQ/1KBHv9giTT/apFE/zRWA';
+		set $favicon '${favicon}P87WgH/M1IA/0BbF/9AWxr/N08J/0BXGf8+USH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAjrxzaGCnAP9brgD/V6wA/1esAP9crgD/WKcA/1+tAP9aowD/XKMA/3e7';
+		set $favicon '${favicon}OP9qrhv/SIoA/06NAP9GggD/SYYA/0eFAP9MiwD/SIcA/06HAP9RigD/UIsA/0+EAP92m';
+		set $favicon '${favicon}1T/8f/o//L/8//1//r/+f/6//r/+P/2/+//9P/s//X/7f/k+tf/YIc8/06CAf9RjAX/SI';
+		set $favicon '${favicon}cA/0uHAP9LhwD/S4kA/0mKAP9GigD/SYkA/06JAP9OiQD/TogA/06HAP9OhgD/TocA/0u';
+		set $favicon '${favicon}IAP9LigD/SYoA/0mKAP9IhwD/TYcM/0iAC/9ZhzL/d5xV/+n/1f/z/+n/+P/3//r////5';
+		set $favicon '${favicon}/v//+f3+//v////7////9fz1//b/+v/x//H/yem//1aCPP9PhCD/R4MA/0yJAP9MiwD/R';
+		set $favicon '${favicon}4MA/0qGAP9MhAD/T4YA/1WIFv9UhBv/WIUl/26XR/9AZwX/NVcA/zlXAP86VQ3/PFcR/z';
+		set $favicon '${favicon}lRDv86UhD/QVka/z1UFP89TyX/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}jrxzaGCnAP9brgD/V6wA/1esAP9ZqwD/Xa8A/1qrAP9cqgD/X6wA/1ypAP9apAD/d7wu/';
+		set $favicon '${favicon}1aYAP9KigD/UpAA/0mKAP9EiAD/S40A/0eCAP9PhwD/ToYA/1OCIP+82Kj/9P/w//P/9/';
+		set $favicon '${favicon}/4/f7/9/n7//7+/v/9//7/+//6//v/+v/0/+r/krN3/1KBHv9NhQD/TokA/06GAP9OhwD';
+		set $favicon '${favicon}/S4oA/0mKAP9GigD/RooA/0uJAP9OiAD/TocA/0+HAP9PhgD/TocA/0uIAP9LiQD/SYoA';
+		set $favicon '${favicon}/0mKAP9PiwD/TYUA/1iJMv9rkE//5fzV//j/7f/9//f/+/z5//r6///9/f///fz///z7/';
+		set $favicon '${favicon}v/7/f7/+/////j//v/v//D/7f/q/3yia/9WiCf/TYYA/0yKAP9IhgD/TokA/0+HDP9Qgx';
+		set $favicon '${favicon}n/V4Ms/1N/Jf9qkkX/SG4Y/zRaAP83VwD/OFYA/zlUC/8+VRX/O1MS/0FVHP9BVRz/P1M';
+		set $favicon '${favicon}Z/0FVHP9CUin/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrxzaGCnAP9Yr';
+		set $favicon '${favicon}gD/V60A/1atAP9asAD/VKgA/16wAP9XqwD/XK0A/1mqAP9frQD/YawA/2OqAP97vjz/RY';
+		set $favicon '${favicon}gA/0yOAP9EiQD/QoUA/0qGAP9RiQD/UokL/018JP/d89D/9P/x//r////9/f////3////';
+		set $favicon '${favicon}7///9+v3///////7//P/5//P/ttCe/1eDLP9PhQ3/SoQA/0+GAP9OhwD/TokA/0mKAP9G';
+		set $favicon '${favicon}igD/RooA/0uJAP9OiAD/T4cA/0+HAP9PhwD/TogA/0uIAP9LiAD/SYkA/0uJAP9LhgD/V';
+		set $favicon '${favicon}IYf/1mDO//Z8sv/+P/0//z/+v/9+fj///7////8/////f////7////+/v///f3/+vz8//';
+		set $favicon '${favicon}r//v/2//r/7P/p/6HDkf9NfCD/ToYA/1CLAP9MiAD/UYkL/06BFf9bgzH/ZoxC/2GEP/8';
+		set $favicon '${favicon}6XgD/N1cA/zxbA/82UQP/PlUV/z9WF/89VBT/O08S/z5SF/8/Uxn/PlIX/z5SF/8+TiT/';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrxzaGCnAP9YrgD/V60A/1atAP';
+		set $favicon '${favicon}9WrAD/V60A/1qwAP9VqwD/VqsA/1GmAP9brAD/WagA/12sAP9jrAD/cLUA/3CzH/9FjQD';
+		set $favicon '${favicon}/SYwA/0eFAP9Ohgj/UIcd/1eDO//o/OL/9v35//r7///8+v////3////7/////P///Pj/';
+		set $favicon '${favicon}///+///6//f/vdao/1mBLv9ThxP/UYoA/0+HAP9OiAD/TokA/0mKAP9GigD/RokA/0uIA';
+		set $favicon '${favicon}P9OiAD/T4cA/0+HAP9OiAD/S4gA/0uIAP9JiAD/S4gA/06IAP9QhQD/XIQz/8jjuP/0//';
+		set $favicon '${favicon}H/+//////7/////v////3+///8/f///fz////6////9/////r////7//v++//3//j/9P/';
+		set $favicon '${favicon}x/6XClv9Ygir/V4gP/06EAP9RhwD/T4MF/2GMOP9qjEn/Pl0J/zhVCP82UwP/O1YP/zpS';
+		set $favicon '${favicon}EP9AVxn/P1MZ/z9TGf8/Uxn/RFkg/z5SF/89URX/QlYd/z1UF/9CVCv/AAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrxzaGCnAP9YrgD/V6wA/1atAP9ZrwD/V60A/1O';
+		set $favicon '${favicon}qAP9WrQD/VasA/16zAP9UqQD/Xa8A/1yuAP9YqAD/YKoA/2GpAP9yujn/XKYi/0iJAP9I';
+		set $favicon '${favicon}hgD/SYQA/1SAN//j9OH/+//////+////+/////r9///+////+////vr///z7/v/5//X/v';
+		set $favicon '${favicon}9iq/1eALf9RhxP/TYYA/06HAP9OiAD/S4oA/0mKAP9GigD/RokA/0uHAP9OhwD/TogA/0';
+		set $favicon '${favicon}6JAP9LiQD/SYkA/0mIAP9JiAD/S4cA/1GFDf9Ygir/r8uZ//b/7f/7//v/+fj+///9///';
+		set $favicon '${favicon}8+fz///7+/////v///vf////z////8/////X////6//z//P/6//v/9P/x/6vFoP9YfjD/';
+		set $favicon '${favicon}XYcl/1SDAP9XhRT/Z5JA/0BmFP84VQj/OlUS/zpVEv87UxL/PVQU/z1UFP8+Uhf/P1MZ/';
+		set $favicon '${favicon}0BUGv8/Uxn/PlIX/z9TGf9AVBr/PVQX/z1UF/8/USj/AAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAjrt2W2CmAP9YrgD/V6wA/1asAP9XrQD/V60A/1atAP9WrQD/VK0A';
+		set $favicon '${favicon}/1asAP9XrQD/V60A/1ivAP9csAD/WacA/2KtAP9WpAD/XKkZ/3S4Rf9Ulw3/RokA/1KCL';
+		set $favicon '${favicon}f/o+uP/+/////38/////v7////+///8/f///P///v3///3////4//X/vNin/1aCKv9Ohg';
+		set $favicon '${favicon}D/S4gA/06HAP9OiAD/S4oA/0mKAP9GiQD/SYgA/06GAP9OhwD/TokA/02LAP9IiAD/TI8';
+		set $favicon '${favicon}A/0mMAP9IhwD/UIcD/1aCKv+btIX/9v/t////+v/7+fn///7///v6/f/9////+vz8//7/';
+		set $favicon '${favicon}/P////r////1////9f////r///79//79///6/v//9v/3/6q9ov9jgEn/W38u/22RQf9Te';
+		set $favicon '${favicon}CT/NFcA/zlXFf86VRL/PVQX/z1UF/8/Uxn/P1MZ/z9TGf8/Uxn/P1MZ/z1UF/89VBf/PV';
+		set $favicon '${favicon}QU/z1UFP89VBT/OlUS/zpVEv8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAjrt2W2CmAP9YrgD/V6sA/1asAP9XrQD/V60A/1atAP9WrQD/VK0A/1StAP9XrQD/V';
+		set $favicon '${favicon}60A/1WtAP9ZsAD/WqoA/16tAP9ZqwD/VagA/1+tEP9fpwn/ebxA/06EF//l+N7//f/+//';
+		set $favicon '${favicon}r6+v////7///79/////v/+/f///P7///v////2//X/utmm/1SDIv9OhgD/SYgA/0uHAP9';
+		set $favicon '${favicon}OiAD/S4oA/0mKAP9JiAD/SYgA/06GAP9PhwD/SocA/0mJAP9JiQD/RooA/0GCAP9UjQn/';
+		set $favicon '${favicon}UoAn/4amcP/2/+///v/6///7/P///P////////7+/v/6////+v////z+/v/+//z////6/';
+		set $favicon '${favicon}///+v///v3///3////8///8/f//+v/+/7HArf9pg1T/aIVE/zlZAP82VAD/PFcV/zhRHP';
+		set $favicon '${favicon}89VBf/PVQX/z9TGf8/Uxn/P1MZ/z9TGf8/Uxn/P1MZ/z1UF/89VBT/PVQU/z1UFP86VRL';
+		set $favicon '${favicon}/OlUS/zpVDf89UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrt5TmCmA';
+		set $favicon '${favicon}P9YrgD/V6sA/1asAP9XrQD/V60A/1atAP9WrAD/VK0A/1StAP9XrQD/V60A/1WsAP9WrQ';
+		set $favicon '${favicon}D/W60A/1qsAP9ZrwD/U6oA/1GnAP9gsQD/W6cA/3uzRv/q/9//9vrz/////v///fz////';
+		set $favicon '${favicon}+//v7+//+/v7//P7+//v//v/2//T/utqk/1GEG/9LhwD/SYgA/0uHAP9OiAD/S4kA/0mJ';
+		set $favicon '${favicon}AP9JiAD/SYgA/0+GAP9PhgD/SYUA/0yLAP9JigD/R4gA/1KPAP9Pghf/bY9Y/+f64P/7/';
+		set $favicon '${favicon}/v///v+///9/////P3//fv6//3/+//2/v3/9v7+//r9///8/v///v7+///+/v///f////';
+		set $favicon '${favicon}z////7///8/P//+f/8/7jFsv9BWin/QFsX/zlWAP8+Wwn/OFAM/z5VGf89VBf/PVQX/z1';
+		set $favicon '${favicon}UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/OlUS/zpVDf86VQ3/OlUN/zpVDf89';
+		set $favicon '${favicon}UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrt2W2CmAP9brQD/V6wA/1';
+		set $favicon '${favicon}asAP9XrQD/V60A/1etAP9WrAD/VqwA/1asAP9XrQD/V60A/1etAP9UqgD/W60A/1mrAP9';
+		set $favicon '${favicon}SrAD/U68A/1KsAP9XrQD/Xq8A/2GcAP/r/9///f/+//7/+v////7/+vr6//3////+/v7/';
+		set $favicon '${favicon}/P7+//v//v/2//H/utqk/1GEIP9LhwD/SYgA/0uHAP9OiAD/S4kA/0mJAP9JiAD/SYgA/';
+		set $favicon '${favicon}0+GAP9PhgD/S4cA/0qJAP9GhAD/U44A/0+DBf9hiEL/3PTT//f/+P/5+Pv///v////7//';
+		set $favicon '${favicon}///P3////7//z/+v/1/vr/9//+//n+///6/f///v3///79/////P////z////8///8/f/';
+		set $favicon '${favicon}/+f/4/6Oxmf87UB//OFMI/zxWAP85UwD/Q1ka/0BUGv89VBf/PVQX/z1UFP89VBT/PVQU';
+		set $favicon '${favicon}/z1UFP89VBT/PVQU/z1UFP89VBT/OlUN/zpVDf86VQ3/OlUN/zpVDf8/UiL/AAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjrt2W2CmAP9brQD/V6wA/1esAP9arAD/V60';
+		set $favicon '${favicon}A/1etAP9XrQD/V6wA/1esAP9XrQD/V60A/1etAP9WrAD/XKwA/1qsAP9RqwD/U68A/1ex';
+		set $favicon '${favicon}AP9SqgD/WK0A/2moDv/l+dn//f////7//P/9/vv//f////v9/v/+/f///v7+//3//v/4/';
+		set $favicon '${favicon}/T/utmm/1SDIv9OhgD/SYgA/0uHAP9OhwD/S4kA/0mJAP9JiAD/SYgA/06HAP9OhgD/SY';
+		set $favicon '${favicon}UA/0yIAP9QiQD/UYYA/1l/Mf/J47v/9v/3//f8+////v////7////6/P////7////+//n';
+		set $favicon '${favicon}8+f/7//7/+v/+//r//v/6/v///v3///79/////P////z////9///8//z/+//1/52tjv89';
+		set $favicon '${favicon}Ux7/OFED/0ReEf85UwD/PVMI/z5TEv89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/P';
+		set $favicon '${favicon}VQU/zpVEv86VRL/OlUS/zpVEv89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAjLxzaGGmAP9brgD/WqwA/1esAP9arAD/Wq0A/1qsAP9XrQD/';
+		set $favicon '${favicon}V6wA/1etAP9arAD/V60A/1WrAP9YrgD/WqoA/12tAP9XrQD/T6sA/1WvAP9VrQD/Wa4A/';
+		set $favicon '${favicon}2ekFP/p/N////7////9/f/8/fr//P7+//z+/////f////3////////6//X/vNin/1aCKv';
+		set $favicon '${favicon}9Ohgj/S4cA/06GAP9OhwD/S4kA/0mKAP9GigD/SYgA/06IAP9OhwD/TokA/0aCAP9VhyH';
+		set $favicon '${favicon}/WYAy/7bPpP/0/+z/+//7//3////7+/v//v7+///////+/v7/+fv7//3////9//7/+//4';
+		set $favicon '${favicon}//z//P/8/v7//v3////9/////P////3////+/v/8//j/+f/x/5usiv9AViP/PlYP/zlSB';
+		set $favicon '${favicon}v89VQ3/P1UN/0BVFf89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/zpVEv86VR';
+		set $favicon '${favicon}L/OlUS/zpVEv89VBT/PVQU/z1UFP8/USj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAjL1xcWGnAP9brgD/WqwA/1etAP9arQD/Wq0A/1qsAP9arAD/V60A/1etAP9ar';
+		set $favicon '${favicon}AD/Wq0A/1asAP9YrgD/XasA/12tAP9XrQD/UasA/1GtAP9VrgD/W64A/2ikKf/n+eL/+v';
+		set $favicon '${favicon}j///37+/////7/+P38//3//////f////3////////7//X/vtep/1mBLv9PhQ3/S4cA/06';
+		set $favicon '${favicon}GCP9OhgD/S4kA/0mKAP9GigD/RooA/0uJAP9OiQD/SokA/02FAP9Ygjr/mLOM//f/8//9';
+		set $favicon '${favicon}//r//v/6//7/+v/9//7/+//+//n+/f/4/fz//f//////////+/r////6//7/+v/8//z//';
+		set $favicon '${favicon}v7+///9/////P////3////+/f/8//X/+//x/6Cxj/89UiL/OlQX/zZQEP9BWR3/PVEV/z';
+		set $favicon '${favicon}1RFf89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8';
+		set $favicon '${favicon}9VBf/PVQX/z9TGf9BUSj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjr1xc';
+		set $favicon '${favicon}WCnAP9brgD/WqwA/1qsAP9crQD/XK0A/1qsAP9XrQD/V60A/1qsAP9arAD/Wq0A/1iuAP';
+		set $favicon '${favicon}9VqwD/Xa4A/1ysAP9WqwD/Vq8A/1avAP9VqwD/V60A/2WgKf/m+OH///7////9///////';
+		set $favicon '${favicon}/+fv7//3//////f////3////////7//X/vNio/1aBLv9Ohgj/S4cA/0uHAP9OhwD/S4kA';
+		set $favicon '${favicon}/0uKAP9JiAD/SYgA/0mJAP9LiQD/T4cA/1eDLP+EoXb/9P/0//j+9/////7//Pv2////+';
+		set $favicon '${favicon}v/6/fr/+/////j9/v/5/v//+/////3++/////r////6//7/+v/8//r//v7+///9/////f';
+		set $favicon '${favicon}////3///7+/v/8//j/+P/w/6GukP8+UyP/O1Qg/ztVGf89VBf/PFId/z9TGf89VBT/PVQ';
+		set $favicon '${favicon}U/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBf/PVQX/z9T';
+		set $favicon '${favicon}Gf9BUSj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLxzaF6nAP9YrgD/Wq';
+		set $favicon '${favicon}wA/1qsAP9crAD/Wq0A/1etAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V60A/1e';
+		set $favicon '${favicon}tAP9XrQD/V60A/1esAP9WrAD/WK4A/2WjJ//o+97//v7+///9/////v7//P7+//7+/v//';
+		set $favicon '${favicon}/P////7///37+v/6//T/x+e3/1mLOv9HhAD/SYsA/02LAP9JhQD/UIoA/0+IAP9QiAD/T';
+		set $favicon '${favicon}IgA/0OIAP9JiQL/WoE0/3GKX//v/uv/9fz1//z//P/+//z////7/////v/9/P///f7///';
+		set $favicon '${favicon}z9///7////9vz1//3/9/+ytqf////1//z/+v/8//z//v/8//7+/v///f////3///79///';
+		set $favicon '${favicon}8//z/+v/1/6Guk/9AUyP/PVQX/ztTEv89VBT/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/';
+		set $favicon '${favicon}PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/USj/AAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD';
+		set $favicon '${favicon}/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A';
+		set $favicon '${favicon}/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//7//P///f////r8/////';
+		set $favicon '${favicon}v/6//T/wOKv/3SsVP9wsEb/RowA/0iJAP9LigD/TIgA/1GKAP9PhwD/UIgH/0SGAP9Nhh';
+		set $favicon '${favicon}//ZoVQ/+Pw2v/5//j/+//+//3////9/vv///79///9/f///v///v3///v8///5+/v/+//';
+		set $favicon '${favicon}3/8jRv/9QV0D//P/z//z/+v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gt';
+		set $favicon '${favicon}lf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89V';
+		set $favicon '${favicon}BT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9W';
+		set $favicon '${favicon}rQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V';
+		set $favicon '${favicon}64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z//P///v////7///78/P/5//T/w+es/2';
+		set $favicon '${favicon}KcMP9lqhz/dLgy/2ioIv9JiAD/SYoA/0eLAP9GgwD/TYUA/1GHHf9YgzT/yuG9//j/9P/';
+		set $favicon '${favicon}3//X/+//+//v++/////7////+///+/v/9/P///Pv+//3//v/7//r/1d7M/01ZP/9MVz7/';
+		set $favicon '${favicon}+P/x//z/+v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/';
+		set $favicon '${favicon}ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP';
+		set $favicon '${favicon}89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsA';
+		set $favicon '${favicon}P9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/N';
+		set $favicon '${favicon}z//v/8///9/////v7//v7+//z//P/5+/v///7///77/v/2//D/xeyu/2imMv9epwD/XKg';
+		set $favicon '${favicon}A/2eoDv9/vkP/VJwA/0OLAP9NjgP/ToUZ/1qBNP+0zZ//9v/t//X/7//6//r/+/77////';
+		set $favicon '${favicon}/v/+/v7////////9/////v///f////f+9P/n8N7/VmJC/0VRMP9KVTz/+//3//z//P/8/';
+		set $favicon '${favicon}v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PV';
+		set $favicon '${favicon}QU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1';
+		set $favicon '${favicon}UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk';
+		set $favicon '${favicon}Lt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1';
+		set $favicon '${favicon}qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9///';
+		set $favicon '${favicon}//v7//v7+//z//P/9////+fv7//7+/v/3//P/veSm/2GeJf9gqwD/YK0A/2GpAP9bpgD/';
+		set $favicon '${favicon}Xq8A/2+9O/9JiwD/UoEx/5+4jP/6/+3/8/3r//v/+v/7//7/+vz8//v7+////////vv+/';
+		set $favicon '${favicon}//+///+/f///f/7//D65P9qd1X/RVUm/z5OJP9LVz7/9/70//z//P/8/v7//v/8//7//P';
+		set $favicon '${favicon}///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT';
+		set $favicon '${favicon}/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU';
+		set $favicon '${favicon}/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9Xrg';
+		set $favicon '${favicon}D/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6w';
+		set $favicon '${favicon}A/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z/';
+		set $favicon '${favicon}/P/6/fr//f/+//3////y/+//vOaq/2imMv9gqwD/Xa4A/12rAP9brQD/Wq8A/1CfAP93s';
+		set $favicon '${favicon}F//mr+K//r/8P/4++///f/6//j+9//5+/v///7///z5/P///v////z////+///8//z/+f';
+		set $favicon '${favicon}/0/4OOcP9DVCL/PlAU/0ZWJ/9GUjj/+v/6//z//P/8/v7//v/8//7//P///f////3///7';
+		set $favicon '${favicon}9///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89';
+		set $favicon '${favicon}VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/A';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9';
+		set $favicon '${favicon}crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/';
+		set $favicon '${favicon}Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z//P/9//7/+f32/';
+		set $favicon '${favicon}/v//v/z//T/u+Or/2SgNv9hqAD/XK0A/1mvAP9XrgD/V60A/12kKf+CrnP/6f/i//j98f';
+		set $favicon '${favicon}////7//P/6//3//v/7+v3///7////9///9+v3///////z9+v/5/fX/nqmR/0NUJf88UBT';
+		set $favicon '${favicon}/P1QU/0NXJP9HVDf/+f/1//z//P/8/v7//v/8//7//P///f////3///79///8//z//P/4';
+		set $favicon '${favicon}/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UF';
+		set $favicon '${favicon}P89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1at';
+		set $favicon '${favicon}AP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9Xr';
+		set $favicon '${favicon}AD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z//P/+//r/+//4//r/+//w//D/vO';
+		set $favicon '${favicon}ew/2aiOf9apAD/XK0A/1myAP9VrAD/WqkA/22pTP/b+NT/9//1//3++////f3//v/6//z';
+		set $favicon '${favicon}//P/8+/////3///76///9/P///f77//3/9/+/yLb/Q1Es/z5SHf8+UxL/QFYP/z5SHf9L';
+		set $favicon '${favicon}WTj/+f/0//z/+v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P';
+		set $favicon '${favicon}1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z';
+		set $favicon '${favicon}1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/';
+		set $favicon '${favicon}1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP';
+		set $favicon '${favicon}/o/Nz//v/8///9/////v7//v7+//z//P////v//f75//j9+v/z//P/uuWu/2KgNv9frQD';
+		set $favicon '${favicon}/V6wA/1qvAP9jrgD/Y6Ap/8z1uv/y//H//f/+//r7+P////7/+/31////+////f//+vf/';
+		set $favicon '${favicon}///9///+/v7//v/1/9TcxP9FUy7/QFMj/0FWF/87VAv/P1QU/z9THv9KVzf/+f/z//z/+';
+		set $favicon '${favicon}v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ';
+		set $favicon '${favicon}3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQ';
+		set $favicon '${favicon}U/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V6';
+		set $favicon '${favicon}0A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///';
+		set $favicon '${favicon}9/////v7//v7+//z//P/+//z////+//7+/v/2//X/tuGp/2OkNv9ZqgD/WqwA/2GqAP9l';
+		set $favicon '${favicon}ohX/t+Kf/+3/5f/5//j//Pz8/////v/8/fj////3//v89////v///Pn///38///8//z/5';
+		set $favicon '${favicon}OzX/1tpQ/9BVSH/P1MZ/z9WF/87UxL/P1QU/z9THv9KWTT/+f/z//z/+v/8/v7//v/8//';
+		set $favicon '${favicon}7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/8';
+		set $favicon '${favicon}9VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/';
+		set $favicon '${favicon}PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP';
+		set $favicon '${favicon}9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD';
+		set $favicon '${favicon}/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+';
+		set $favicon '${favicon}//z//P/6/Pz///7///76///6//X/vuiq/16hHv9aqwD/Xq0A/2miLf+my4n/8f/s//j/9';
+		set $favicon '${favicon}//7/f3///////n69f////f/+//0//3/+v/7+v3///7///r8/P/0+e3/aHVS/0BRHv9AVR';
+		set $favicon '${favicon}X/PVQU/z5VFf87UxL/P1MZ/z9SIv9KWTT/+f/w//z/+v/8/v7//v/8//7//P///f////3';
+		set $favicon '${favicon}///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1U';
+		set $favicon '${favicon}FP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/U';
+		set $favicon '${favicon}iL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1q';
+		set $favicon '${favicon}sAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9a';
+		set $favicon '${favicon}rAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z+/v/6/P3//';
+		set $favicon '${favicon}/7////6///3//D/w+yp/2SnKP9bpAD/YaQL/5m/eP/0/+r/9P3v//v////+/f///Pz8//';
+		set $favicon '${favicon}3/9/////f/+v/z//3/+v/9////+fv7//z/+P99iHD/QlMj/0FWF/8+Vg//O1QL/z5VFf8';
+		set $favicon '${favicon}7UxL/P1MZ/z9SIv9LWjX/+//0//z/+v/8/v7//v/8//7//P///f////3///79///8//z/';
+		set $favicon '${favicon}/P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/';
+		set $favicon '${favicon}z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A';
+		set $favicon '${favicon}/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esA';
+		set $favicon '${favicon}P9XrAD/V64A/2KkJP/o/Nz//v/8///9/////v7//v7+//z+/v///v///Pv+///+///6//';
+		set $favicon '${favicon}P/weao/2adNf9qqDX/gLNg/+b91v/7//X//f/////+///6+f//////////9//+//X/+//';
+		set $favicon '${favicon}0//n/9//2+/j/+//6/5ymk/9BUCv/PFAU/z9XEf89VQ3/OVQL/ztWE/87UxL/P1MZ/0BT';
+		set $favicon '${favicon}I/9LWTj/+v/z//z/+v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CU';
+		set $favicon '${favicon}yP/P1QU/ztUC/89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PV';
+		set $favicon '${favicon}QU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/W';
+		set $favicon '${favicon}qwA/1qsAP9arAD/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2';
+		set $favicon '${favicon}KkJP/o/Nz//v/8///9/////v7//v7+//z+/v/8+/7///7//////v/5//D/u9+k/3GhUf9';
+		set $favicon '${favicon}zoFT/2fnH//r/9P/7/Pn/+/r////9////+////vz8////+//6/PT//f/6//n/9//3/vT/';
+		set $favicon '${favicon}vMa1/0NQL/87Txn/Q1wZ/zpUAP86VQ3/OVQQ/ztWE/85VBD/P1MZ/z9SIv9LVjv/+v/0/';
+		set $favicon '${favicon}/z/+v/8/v7//v/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/';
+		set $favicon '${favicon}89VQ3/PVQU/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT';
+		set $favicon '${favicon}/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arA';
+		set $favicon '${favicon}D/V60A/1qtAP9XrQD/V6wA/1atAP9arAD/Wq0A/1esAP9XrAD/V64A/2KkJP/o/Nz//v/';
+		set $favicon '${favicon}8///9/////v7//v7+//7+/v///v///fv7//z/+P/2//D/xui1/3SbYP/S78X/9v/w//j8';
+		set $favicon '${favicon}9P///v7//f39//38/////f////7///78/P/+//z/+P73//r/+v/R28r/R1Q3/0VVJv87U';
+		set $favicon '${favicon}Az/O1UA/zxWAP86VRL/OFQQ/ztWE/85VAv/P1QU/z9SIv9LVjv/+v/1//z//P/8/v7//v';
+		set $favicon '${favicon}/8//7//P///f////3///79///8//z//P/4/6Gtlf9CUyP/P1QU/ztUC/89VQ3/PVQU/z1';
+		set $favicon '${favicon}UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89';
+		set $favicon '${favicon}VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W1';
+		set $favicon '${favicon}6nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qsAP9';
+		set $favicon '${favicon}XrQD/V6wA/1asAP9XrQD/V6wA/1esAP9WrAD/V64A/2WjJ//o/Nz///79///+/f///v7/';
+		set $favicon '${favicon}/v7+//7+/v///P3////+//z/9f/2/+//xN27/8Lbuf/2//T/+P/1///9/f///v/////+/';
+		set $favicon '${favicon}/v++///////+/n5///+///8//z/9v/0/+X43v9RYkD/P08l/z9THv9AVg//O1UA/zxWAP';
+		set $favicon '${favicon}86VRL/OFQQ/ztWE/85VAv/P1QU/0FSIP9KVzv/+f/z//z//P/8/v7//v/8//7//P///f/';
+		set $favicon '${favicon}//v3///79///8/v7/+v/4/6Gtlf9AUin/P1QU/ztUC/89VQ3/PVQX/z1UF/89VBT/PVQU';
+		set $favicon '${favicon}/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UF';
+		set $favicon '${favicon}P8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/Wqw';
+		set $favicon '${favicon}A/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qsAP9XrAD/V6wA/1as';
+		set $favicon '${favicon}AP9XqwD/V6sA/1arAP9WrAD/V64A/2WkGv/q/dr////6////+P////r//P7///z+/////';
+		set $favicon '${favicon}/r////4////9P/9//T/+P/3//j/+P/6//r//v/8///9////+v3//f/+//r/+v/3//X/+/';
+		set $favicon '${favicon}/7///9///7//v/4//V/5XAe/84VBD/QFQg/z9THv88UBT/PVUN/z1VDf89VQ3/OlUS/zl';
+		set $favicon '${favicon}VEv86VRL/QFQa/0BRHv9LWjX/+f/x//z/+v/8/v7//v/8//7//P/+/f///v3///79///8';
+		set $favicon '${favicon}/v7/+v/4/6Gtlf9AUin/PVQX/ztTEv89VQ3/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/P';
+		set $favicon '${favicon}VQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/';
+		set $favicon '${favicon}Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qsAP9arAD/V60A/1atAP9XqwD/V6sA/';
+		set $favicon '${favicon}1arAP9WrAD/V68A/2WmD//q/dr////6////9f////r//P3///z9//////r////4///9/P';
+		set $favicon '${favicon}///f3//fz///v9/v/+/f///v3////8/////////Pz8//r/+v/5//X/+v/3//n99v/0/+/';
+		set $favicon '${favicon}/kcJ2/3mwUP82WQD/P1QU/0BUIP8/Ux7/QFcZ/z9XEf89VQ3/OlUN/zlVEv85VRL/QFQa';
+		set $favicon '${favicon}/0BRHv9LWjX/+f/v//z/+v/8/v7//v/8//7//P/+/v7//v3///z+///6//7/+v/4/5+tl';
+		set $favicon '${favicon}f9AUin/PVQX/ztTEv89VQ3/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VB';
+		set $favicon '${favicon}T/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9Wr';
+		set $favicon '${favicon}QD/WqwA/1qsAP9arAD/V60A/1qtAP9ZrgD/V64A/1etAP9XrQD/V6wA/1asAP9WrQD/V6';
+		set $favicon '${favicon}8A/2WkGv/o/Nz///79////+v/+//z/+v3///r9//////////7+//78///7+////fz///7';
+		set $favicon '${favicon}9///+/f////7///z+/v/+//z///7////////7/vv/+P/0//T/7P+t0Jr/Z6A8/3euS/86';
+		set $favicon '${favicon}XAD/PFEO/z1THv89VBf/PVUN/zhRA/8/VQ3/PVQU/zpUF/86VBf/QFQg/0BRIf9MWjX/+';
+		set $favicon '${favicon}f/v//z/+v/8/v7//v/8//7//P///v7//v7+//z+///6//7/+v/4/5+tlf9AUin/PVQU/z';
+		set $favicon '${favicon}tUC/89VQ3/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8';
+		set $favicon '${favicon}9VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP';
+		set $favicon '${favicon}9arAD/V60A/1ytAP9ZrgD/Wa4A/1euAP9XrQD/V60A/1etAP9WrgD/V68A/2KkGv/n/dz';
+		set $favicon '${favicon}//v7+//7//P/+//z/+v7///r9/////v///v3///z7///6/f///P3///79///+/f////7/';
+		set $favicon '${favicon}//r8/P/9/////fr9///////7//j/9v/w/8Llqf9pnTv/YaIp/32zU/84WgD/O1AM/z9WG';
+		set $favicon '${favicon}v89VBf/PVUN/zxWAP8/VBT/PVQU/zpUF/86VBf/QFQg/0BRIf9MWjX/+f/v//z/+v/8/v';
+		set $favicon '${favicon}7//v/8//7//P///v7///7+//79///8//z/+v/1/6Guk/9AUyP/PVQU/ztUC/89VQ3/PVQ';
+		set $favicon '${favicon}U/z1UF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1U';
+		set $favicon '${favicon}FP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkL';
+		set $favicon '${favicon}t2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1y';
+		set $favicon '${favicon}tAP9ZrgD/Wa4A/1euAP9arQD/V60A/1euAP9XrgD/V68A/2KkGv/n/N3//P7+//z+/v/8';
+		set $favicon '${favicon}/v7/+v/+//r+/////f///Pz///r9///6/v///P3///z9///+/v7////+//z+/v/8/v///';
+		set $favicon '${favicon}/7///r79v/6//T/1O/A/2yiNv9ipwD/XqIA/3mzTf80WgD/PlYP/z9WGv85URL/PVUN/0';
+		set $favicon '${favicon}BaB/8/VBT/PVQU/zpUF/86VBf/QFQg/0BRIf9MWTj/+f/x//z/+v/+/v7///79///+/f/';
+		set $favicon '${favicon}//v7///7+//7+/v/8//z/+v/1/6Guk/9AUyP/P1QU/ztUC/89VQ3/P1QU/z9UFP89VBT/';
+		set $favicon '${favicon}PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/';
+		set $favicon '${favicon}z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD';
+		set $favicon '${favicon}/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1ytAP9ZrgD/V64A';
+		set $favicon '${favicon}/1etAP9arQD/Wq0A/1euAP9XrwD/WK8A/2KkGv/l/N3/+v/+//z+/v/8/v7//P/8//z//';
+		set $favicon '${favicon}P/+/f///P3///r//v/6//z//P7///z+///+//z//v/8///////8/Pz//f/+//r/9P/f+c';
+		set $favicon '${favicon}//daNP/2qrGf9dqQD/XqcA/3izRf80WwD/P1cR/z1UF/87UxX/O1QL/zpTCP8/VBT/PVQ';
+		set $favicon '${favicon}U/zpUF/86VBf/QFQg/0BRIf9MWTj/+f/x//7/+v/+/v7///79///+/f///v7///7+//7+';
+		set $favicon '${favicon}/v/8//r/+v/1/6Guk/9AVCD/P1QU/ztUC/89VQ3/P1QU/z9UFP89VBT/PVQU/z1UFP89V';
+		set $favicon '${favicon}BT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9c';
+		set $favicon '${favicon}rAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1yrAP9arAD/V6wA/1asAP9XrAD/V';
+		set $favicon '${favicon}60A/1muAP9XrgD/WK4A/2KkJP/l/dz/+v/+//z+/v/+/v7//v/4//7/+P/+//z//v7+//';
+		set $favicon '${favicon}z/+v/8//j//P/4//z/+P/+//z///7+/////v/8/vb/8//v/+n/3v9+sVP/aKkS/1ynAP9';
+		set $favicon '${favicon}cqgD/XakA/3SzQP8yWQD/PFYA/ztTEv9AVxz/PlYP/z1VDf8/VBT/PVQU/zpUF/86Ux7/';
+		set $favicon '${favicon}QFQg/0BRIf9MWTj/+f/x//7//P/+/v7///79///+/f///v7///7+//7+/v/8//r/+v/1/';
+		set $favicon '${favicon}6Guk/9AUyP/P1QU/z5UC/8/VQ3/P1QU/z9TGf89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP';
+		set $favicon '${favicon}89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atA';
+		set $favicon '${favicon}P9WrQD/WqwA/1qsAP9arAD/V60A/1qrAP9aqwD/VqwA/1asAP9XrAD/V60A/1muAP9Zrg';
+		set $favicon '${favicon}D/W60A/2WiLf/n/dz//P/8//79/////v7////4////+P////r//v/6////+P/+//X//P/';
+		set $favicon '${favicon}1//z/+P///v7///7+//79+P/7//T/8P/l/5LBdf9jqgD/WqwA/1ipAP9dqwD/XaoA/3Sz';
+		set $favicon '${favicon}OP80XAD/PlcC/ztTEv89VBT/OVEO/z9XEf8/VBT/PVQX/zpTHv86Ux7/QFQg/0BRIf9MW';
+		set $favicon '${favicon}Tj/+f/x//7//P/+/f////7+///+/f///v7///7+//7+/v/8//z//P/1/6Guk/9CUyP/P1';
+		set $favicon '${favicon}QU/z5UC/8/VQ3/P1MZ/z9TGf89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1';
+		set $favicon '${favicon}UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1';
+		set $favicon '${favicon}qsAP9arAD/V60A/1qrAP9XqwD/VKwA/1SsAP9WrAD/WqwA/1ytAP9crAD/VqgA/2imOP/';
+		set $favicon '${favicon}o/t3/+Pv4///+////+f/////+///9+f////7///38///++f////v///75///+/f///f3/';
+		set $favicon '${favicon}//////r9+v/w/+j/q9eG/2GjAP9WqwD/Va4A/1muAP9bqwD/W6gA/3W0Of8xXAD/O1kA/';
+		set $favicon '${favicon}z1UFP89VBT/PVQU/z1VDf9AVRX/PlUZ/zhRHP8+ViP/QFQg/0BRIf9NWzf/9v/t//7//P';
+		set $favicon '${favicon}/+/f////7+/////////f////z///38///8//z//P/1/6Kulv9AUSH/QVYX/z1VDf85Ugb';
+		set $favicon '${favicon}/QFQa/z5SF/89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU';
+		set $favicon '${favicon}/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60';
+		set $favicon '${favicon}A/1qsAP9XrAD/VK0A/1StAP9WrAD/WqwA/1ysAP9cqwD/X60A/2ShMv/i+9f/+//7//v8';
+		set $favicon '${favicon}/////f////v8/////v///v7/+/v7///+////+/z///3+///8/f/7+v3/+v/8//T/9P/A4';
+		set $favicon '${favicon}q//Z6IM/16sAP9asgD/U64A/1CmAP9arQD/WagA/3W0Of8xXAD/O1kA/z1UFP89VBf/PV';
+		set $favicon '${favicon}QU/z1VDf8/Uxn/OlIU/zlSHf85Uh3/PVEc/0FSIv9NWzf/+//x//3/+////////vz8///';
+		set $favicon '${favicon}+/v////////z////+///9//7/+//3/6CslP8/UiL/QFUV/zpSEP8+VRX/P1MZ/z9TGf89';
+		set $favicon '${favicon}VBf/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/P';
+		set $favicon '${favicon}VQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9';
+		set $favicon '${favicon}XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrQD/';
+		set $favicon '${favicon}Ua4A/1GuAP9WrQD/WqwA/1ysAP9cqwD/WaYA/2amOP/i/tT/9v/z//v//////f////3//';
+		set $favicon '${favicon}//7///8+////P3////9/////P////v////9///7/P//9P/3/8zwvf9knTj/Y6oA/1usAP';
+		set $favicon '${favicon}9XrAD/VawA/1avAP9TqwD/WagA/3W0Of8xXAD/O1cC/z1UF/89VBf/PVQU/z1VDf8+Uhf';
+		set $favicon '${favicon}/O1MV/z9ZHf86VBf/P1Ya/z1RHP9EUyr/9//q//n99v/7/f3///////z9+v/9+/r/////';
+		set $favicon '${favicon}//z8/P/6/fr/+P/z/56rkP89UB//O1MS/z5VFf8+VRX/PVQX/z1UF/89VBf/PVQU/z1UF';
+		set $favicon '${favicon}P89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/Ui';
+		set $favicon '${favicon}L/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qs';
+		set $favicon '${favicon}AP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD/V60A/1qtAP9XrgD/Ua8A/1GvAP9Wr';
+		set $favicon '${favicon}gD/WqwA/1ysAP9cqwD/XawA/12fI//L8Lf/7//o//b/+//7/v//+/f+///8///9/v//+f';
+		set $favicon '${favicon}z///T1+////v////z///3////2//f/3vvX/3OrU/9lrRj/UqMA/2CyAP9brAD/XLAA/1G';
+		set $favicon '${favicon}sAP9XsAD/WagA/3W0Of8xWwD/O1cC/z1UF/89VBf/PVQU/z1UFP8+Uhf/P1Ya/ztVGf82';
+		set $favicon '${favicon}UBD/QFcc/zxQFP9DVCX/4u/T//v/+v/9//7/+vv4//7/+v////r/+/z5//3//v/7//v/+';
+		set $favicon '${favicon}//1/36Ob/89UB//PVQU/z5WD/8+Vg//OlIU/z5VGf89VBT/PVQU/z1UFP89VBT/PVQU/z';
+		set $favicon '${favicon}1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/';
+		set $favicon '${favicon}1atAP9WrQD/WqwA/1qsAP9arAD/WqwA/1ytAP9ZrgD/U68A/1GvAP9TrgD/V60A/1ysAP';
+		set $favicon '${favicon}9cqwD/WKwA/1+pEv+ZyXf/7f/g/+//7//z//X/+//+//3////3/fz/+P/+//r/+v/0//H';
+		set $favicon '${favicon}/+v/7//L/8f/j/9X/frJd/16kFP9TpwD/XLAA/1SpAP9drQD/XK4A/1auAP9VqwD/WagA';
+		set $favicon '${favicon}/3W0Of80WwD/PlcC/z1UF/89VBf/PVQU/z1UFP8/Uxn/PlUZ/zlUEP84Uw7/P1YX/z1SE';
+		set $favicon '${favicon}P9AVCD/oK2P//j/8//9//v////6//7/+P/8/vb//v/6//v/+P/3//H/5e/d/01fOf9AVC';
+		set $favicon '${favicon}D/PlYP/zlUC/89WRP/OlIU/z5VGf89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQ';
+		set $favicon '${favicon}U/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/Wq';
+		set $favicon '${favicon}wA/1qsAP9arAD/WqwA/1ysAP9arAD/U68A/1GvAP9TrgD/V60A/1yrAP9arAD/UqgA/1i';
+		set $favicon '${favicon}nAP9loSP/w++k/+z/5v/u/+z/+P/1//j/9P/3//X/9P/z//L/7P/z/+3/7//p/9r8yv9/';
+		set $favicon '${favicon}s1f/YKQA/1qrAP9ZsAD/U6kA/1SqAP9brQD/V6oA/1asAP9XrAD/W6gA/3WzQf80WwD/P';
+		set $favicon '${favicon}lcC/z1UF/89Ux7/PVQX/z1UFP8/Uxn/O1MV/ztWE/89Whn/O1QL/0BVFf89URz/TmA6/9';
+		set $favicon '${favicon}7m1//3+/P////3////9//8//P/+/7y//3/+v/7//X/iZR9/zpMJP8/Vhr/O1UA/ztXAv8';
+		set $favicon '${favicon}4VAD/QFcZ/zlREv89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/';
+		set $favicon '${favicon}PVQU/z1UFP89VBT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAkLt2W16nAP9XrgD/WqwA/1qsAP9crAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9arAD';
+		set $favicon '${favicon}/WqwA/16qAP9cqwD/Vq0A/1GuAP9UrQD/V6wA/1qsAP9arAD/VbIA/1ivAP9gpwD/a6Mr';
+		set $favicon '${favicon}/63Ylf/m/97/8v/q//X/7P/4/+z/8v/l//P/6v/a+cr/qNeN/2mmK/9jqwD/W6wA/1WqA';
+		set $favicon '${favicon}P9bsQD/VasA/1auAP9TqwD/VKgA/16sAP9frAD/XagA/3WzQf80WwD/PlYP/z1THv89Ux';
+		set $favicon '${favicon}7/PVQX/z1UFP8+Uhf/OlIU/zhUEP84VBD/OFED/0BXGf8/Vhr/Okwh/1NdSf/L08T/+P7';
+		set $favicon '${favicon}v//z/9P/+//T////1/+ju4f+EjXr/Pkwu/0BSKf8+VRX/OVMA/z1bAP81UgD/QVoV/zlR';
+		set $favicon '${favicon}Dv89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89V';
+		set $favicon '${favicon}BT/PVQU/z1UFP8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkLt2W2C';
+		set $favicon '${favicon}mAP9YrQD/V6wA/1etAP9arAD/Wq0A/1atAP9WrQD/WqwA/1qsAP9XrAD/V6wA/1yrAP9a';
+		set $favicon '${favicon}qwD/VK0A/1OuAP9WrQD/V6wA/1qsAP9arAD/Uq0A/1WtAP9grgD/ZqoA/2SfJ/9yp1D/l';
+		set $favicon '${favicon}L96/6zRj/+t0Y//n8OA/4awaf9wo0z/YKAN/2CrAP9VqgD/WbEA/1ywAP9WqgD/V60A/1';
+		set $favicon '${favicon}WtAP9UrAD/WK4A/1+sAP9dqAD/XagA/3WzQf80WgD/PlYP/z1UF/89Ux7/PVQX/z1UFP8';
+		set $favicon '${favicon}+Uhf/QFcc/zpWE/84VQj/PlYP/z9WF/87UxX/PlMj/0NQL/8/TDL/a3Zc/5Sehv+gqZD/';
+		set $favicon '${favicon}gYlw/05aP/9EUC//QVEo/z9THv8+Vg//PlcC/zxXAP87WQD/OlMI/z5VFf89VBT/PVQU/';
+		set $favicon '${favicon}z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1UFP';
+		set $favicon '${favicon}8/UiL/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAl8B7RWenH/9cqwD/V60A';
+		set $favicon '${favicon}/1iwAP9XrQD/WK4A/1asAP9XrAD/XK0A/1mqAP9UqAD/WK4A/1atAP9TrgD/U64A/1OuA';
+		set $favicon '${favicon}P9WrgD/V60A/1qsAP9crAD/WqwA/1qtAP9arAD/XKwA/1yrAP9cqgD/XKkA/1+oAP9hqA';
+		set $favicon '${favicon}D/YqcA/2GnAP9fqAD/XKoA/1qsAP9XrQD/V60A/1etAP9XrQD/V60A/1asAP9WrAD/V6w';
+		set $favicon '${favicon}A/1qsAP9cqwD/W6kA/3izQf80WgD/PlYP/zpVEv86VBf/PVQX/z1UF/8/Uxn/P1QU/zpV';
+		set $favicon '${favicon}Df86VQ3/PVUN/z9UFP89VBT/PVQX/z1SIv89Uif/P1Ii/z9SIv9BUiL/QVIg/0FSIP9BU';
+		set $favicon '${favicon}xn/P1MZ/z9UFP8/VQ3/PFYA/zxWAP88VgD/PFYA/z1VDf8/VQ3/P1UN/z1VDf89VQ3/PV';
+		set $favicon '${favicon}QU/z1UFP86VBf/OlQX/ztVGf84UhT/OlUS/zlUEP8+Vg//PVUN/z5WD/8+USH/AAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGujOP9jqgD/V60A/1OrAP9WrgD/V';
+		set $favicon '${favicon}68A/1qvAP9XrAD/VqgA/1ytAP9esAD/VaoA/1OuAP9TrgD/Vq4A/1auAP9XrQD/V60A/1';
+		set $favicon '${favicon}qsAP9arAD/WqwA/1qsAP9XrQD/V60A/1etAP9WrgD/Vq8A/1auAP9XrQD/V60A/1etAP9';
+		set $favicon '${favicon}XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/';
+		set $favicon '${favicon}W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/';
+		set $favicon '${favicon}z9UFP89VBT/PVQU/zpUF/86VBf/PVQX/z1UF/8/VBT/P1QU/z9VDf8/VQ3/P1UN/z9VDf';
+		set $favicon '${favicon}8/VQ3/P1YA/z1VDf88VgD/PVUN/z1VDf8/VQ3/P1UN/z1VDf89VQ3/PVQU/z1UFP86VRL';
+		set $favicon '${favicon}/OlQX/zlTFf8/WR3/OlQX/zxXFf86UhD/PlUV/z1UFP9DVS3/AAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAHamTf9iowb/Xq0A/1iuAP9UsAD/UKsA/1KsAP9Yrg';
+		set $favicon '${favicon}D/VqsA/1mrAP9brgD/WK0A/1qsAP9arAD/WqwA/1etAP9XrQD/V60A/1asAP9WrAD/Vqw';
+		set $favicon '${favicon}A/1asAP9WrAD/V6wA/1etAP9arQD/Wa4A/1muAP9XrQD/V60A/1etAP9XrQD/V60A/1et';
+		set $favicon '${favicon}AP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80W';
+		set $favicon '${favicon}gD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PV';
+		set $favicon '${favicon}QU/z1UFP89VBT/PVQU/z1UFP89VBT/PVQU/z9UFP8/VBT/P1QU/z9UFP89VBT/PVUN/z1';
+		set $favicon '${favicon}UFP89VQ3/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/PVUN/z1VDf86VQ3/OlUS/z1UFP89';
+		set $favicon '${favicon}VBf/O1MV/z9VIf89URz/P1Ii/0FUJf+JlXhSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAABuoD//Y6QL/1uqAP9UqgD/VrAA/1StAP9RqwD/V64A/1mvAP9';
+		set $favicon '${favicon}ZrgD/XK0A/16rAP9eqwD/XKsA/1qsAP9XrQD/V60A/1atAP9UrQD/VK0A/1SsAP9WrAD/';
+		set $favicon '${favicon}VqwA/1qsAP9arAD/XK0A/1ytAP9arAD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/';
+		set $favicon '${favicon}1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv';
+		set $favicon '${favicon}86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1UFP89VBT';
+		set $favicon '${favicon}/PVQU/z1UFP89VBT/PVQU/z9UFP8/VBT/P1QU/z9UFP89VBf/PVQU/z1UFP89VBT/PVQU';
+		set $favicon '${favicon}/z1UFP89VBT/PVQU/z1UFP89VBT/PVUN/z1VDf86VQ3/OlUN/z1UFP86UhT/QFYj/zxPH';
+		set $favicon '${favicon}v9AUiv/P1At/1ppTf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAgq9ismejJ/9eqgD/XbAA/1evAP9VrgD/V68A/1WrAP9VqAD/XKsA/16q';
+		set $favicon '${favicon}AP9eqgD/XKoA/1qrAP9XrAD/V60A/1atAP9WrgD/U64A/1OuAP9WrQD/Vq0A/1qrAP9aq';
+		set $favicon '${favicon}wD/XKoA/1yrAP9arAD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V6';
+		set $favicon '${favicon}0A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1';
+		set $favicon '${favicon}UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1VDf89VQ3/PVUN/z1VDf89';
+		set $favicon '${favicon}VBT/PVQU/z1UF/89VBf/PVQX/z1UF/89Ux7/PVQX/zpUF/86VBf/OlQX/zpUF/89VBf/P';
+		set $favicon '${favicon}VQX/z1UFP89VBT/PVUN/z1VDf88VgD/PVUN/z9UFP9CViP/PVAf/0ZUMP9BTzH/g416SQ';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAABvpzz/YqcA/16rAP9brgD/VqwA/1iuAP9arwD/W60A/1yrAP9cqwD/XKsA/';
+		set $favicon '${favicon}1qrAP9XqwD/V6wA/1etAP9WrgD/Vq4A/1auAP9WrgD/V60A/1esAP9aqgD/XKgA/1qpAP';
+		set $favicon '${favicon}9arAD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD';
+		set $favicon '${favicon}/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU';
+		set $favicon '${favicon}/z1VDf86VgD/P1QU/z9UFP89VBT/PVUN/z1VDf88VgD/PVUN/z1VDf89VBT/PVQU/z1UF';
+		set $favicon '${favicon}/89VBf/PVMe/z1THv89Ux7/PVQX/zpUF/86VBf/OlQX/zpUF/89VBf/PVQX/z1UFP89VB';
+		set $favicon '${favicon}T/PVQU/z1VDf89VQ3/PVQU/0JWI/8+USH/Pk0n/2p3W9EAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAoMiEHWmhNf9gpAD/Yq0A/1eqAP9UqQD/WK4A/1etAP9XrQD/V60A/1esAP9XqwD/V6';
+		set $favicon '${favicon}sA/1etAP9XrQD/V68A/1evAP9XrwD/V64A/1etAP9XqwD/WKkA/1eqAP9XrAD/V60A/1e';
+		set $favicon '${favicon}tAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9a';
+		set $favicon '${favicon}rAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P';
+		set $favicon '${favicon}1QU/z9UFP89VBT/PVUN/z1VDf88VgD/PVUN/z1VDf89VBT/PVQU/z1UF/89VBf/PVQX/z';
+		set $favicon '${favicon}1UF/86VBf/OlQX/zpUF/86VRL/OlUS/zpVEv89VBT/PVQU/z1UFP89VBT/P1QU/z9TGf8';
+		set $favicon '${favicon}/Uxn/P1Me/0BQJ/9UYUH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}CMu295ZaAp/1+kAP9eqwD/VqsA/1auAP9TrwD/Vq4A/1atAP9XqwD/V6sA/1qsAP9arAD';
+		set $favicon '${favicon}/Wa4A/1muAP9ZrgD/V64A/1etAP9XrAD/VqsA/1arAP9XrAD/V60A/1etAP9XrQD/V60A';
+		set $favicon '${favicon}/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0O';
+		set $favicon '${favicon}f80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VB';
+		set $favicon '${favicon}T/PVQU/z1VDf89VQ3/PVUN/z1VDf89VBT/PVQU/z1UF/89VBf/PVQX/z1UF/86VBf/OlU';
+		set $favicon '${favicon}S/zpVEv86VQ3/OlUN/zpVDf89VBT/PVQU/z1UFP89VBf/P1Me/z9SIv8/USj/QVAr/5ik';
+		set $favicon '${favicon}igMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHm';
+		set $favicon '${favicon}uWdpeoQD/X64A/1evAP9SrwD/VKwA/1auAP9ZrgD/VqsA/1WpAP9ZrgD/VqwA/1asAP9U';
+		set $favicon '${favicon}qgD/V60A/1etAP9WrgD/WrIA/1SsAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V';
+		set $favicon '${favicon}60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/z';
+		set $favicon '${favicon}pVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1UFP8';
+		set $favicon '${favicon}9VBT/PVQU/z1UFP89VBT/PVQU/z1UFP89VBT/O1MS/z9WF/8+VRX/PVUN/z1VDf88VgD/';
+		set $favicon '${favicon}PlcC/z1VDf9BVhf/P1QU/z9TGf89URz/RlUt/0BOLP96h2yHAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaagu';
+		set $favicon '${favicon}/1ymAP9drgD/WqwA/1eqAP9ZqwD/Wa8A/1ywAP9SpwD/VqwA/1mvAP9WrAD/WK8A/1iwA';
+		set $favicon '${favicon}P9SqgD/Va0A/1ivAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQ';
+		set $favicon '${favicon}D/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQ';
+		set $favicon '${favicon}X/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1UFP89VBT/PVQU/z1U';
+		set $favicon '${favicon}FP89VBT/PVQU/z1UFP89VBT/O1MS/z1UFP9AWRP/PlYP/z5WD/8+VwL/O1QL/z5WD/9AV';
+		set $favicon '${favicon}RX/PVEc/0FUJf9BUSj/XWpL/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJDCeFJjnzX/Y';
+		set $favicon '${favicon}aMY/2OqAP9ZqAD/W64A/1WsAP9bswD/UqwA/1StAP9QqQD/U6kA/1asAP9ZrwD/XLAA/1';
+		set $favicon '${favicon}esAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9';
+		set $favicon '${favicon}XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/';
+		set $favicon '${favicon}P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1UF/89VBf/PVQX/z1UF/89VBT/PVQU/';
+		set $favicon '${favicon}z1UFP89VBT/O1QL/z9XEf87UxL/OVEO/z9UFP9AVg//QFUV/0BVFf9DVCL/QlIp/01cOP';
+		set $favicon '${favicon}8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgbFismefMv9lqg';
+		set $favicon '${favicon}D/XKkA/1+yAP9PpwD/Vq4A/1StAP9XrwD/Wa8A/1aqAP9YrgD/XbAA/1aqAP9XrQD/V60';
+		set $favicon '${favicon}A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1et';
+		set $favicon '${favicon}AP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86V';
+		set $favicon '${favicon}gD/P1QU/z9UFP89VBT/PVQU/z1UF/89VBf/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/Pl';
+		set $favicon '${favicon}YP/z1UFP84UAz/P1Ya/0FVHP89URz/QVUh/0BRIf9BUCv/j5mALwAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2qUn/Z6QU/2SrAP9';
+		set $favicon '${favicon}eqwD/XK4A/1SqAP9TqQD/VasA/1aqAP9VqgD/WasA/12vAP9XrQD/V60A/1etAP9XrQD/';
+		set $favicon '${favicon}V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/';
+		set $favicon '${favicon}3i0Of80WgD/PlYP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP';
+		set $favicon '${favicon}89VBT/PVQU/z1UF/89VBf/PVQX/z1UF/89VBT/PVUN/z1VDf89VQ3/PVQU/zpSEP9HWyj';
+		set $favicon '${favicon}/QVQl/z5OJP89TCb/R1Ux/3J+X8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqdKJB2mgM/9nqBb/X6YA/1+u';
+		set $favicon '${favicon}AP9crgD/VqsA/1muAP9ZrgD/VKkA/1muAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9Xr';
+		set $favicon '${favicon}QD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/Pl';
+		set $favicon '${favicon}YP/zpVEv86VRL/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1';
+		set $favicon '${favicon}UF/89VBf/PVQX/z1UFP89VQ3/PVUN/z1VDf89VQ3/O1MS/z5VGf86TRv/QVMs/0BOLP9d';
+		set $favicon '${favicon}aVH9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACRvXNoaaIt/1+jAP9gqwD/WqwA/';
+		set $favicon '${favicon}1WtAP9TrgD/UasA/1WuAP9WrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP';
+		set $favicon '${favicon}9XrQD/V60A/1etAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/zpVEv86VRL';
+		set $favicon '${favicon}/PVQX/z1UF/9BUxn/P1QU/z1VDf86VgD/P1QU/z9UFP89VBT/PVQU/z1UF/89VBf/PVQU';
+		set $favicon '${favicon}/z1UFP89VQ3/PVUN/z1VDf89VBT/QFQa/0RZJf9AUCf/SVY2/wAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIOzXsRkoCD/Y6oA/1yrAP9YrgD/V6';
+		set $favicon '${favicon}8A/1SsAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1etAP9XrQD/V60A/1e';
+		set $favicon '${favicon}tAP9XrQD/V60A/1etAP9arAD/W6kA/3i0Of80WgD/PlYP/z1UFP89VBT/PVQU/z9UFP8/';
+		set $favicon '${favicon}Uxn/P1QU/zpWAP86VgD/PVQU/z9TGf8/Uxn/PVQX/z1UF/89VBT/PVQU/z1UFP89VBT/P';
+		set $favicon '${favicon}1QU/z9TGf8/Ux7/QFEh/z9OKP+HkXhSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcaJL/2OgDf9orwD/XKsA/12vAP9crQD';
+		set $favicon '${favicon}/VqoA/1qtAP9arQD/VasA/1etAP9XrgD/VawA/1atAP9WrQD/V60A/1etAP9arAD/WqwA';
+		set $favicon '${favicon}/1qsAP9aqwD/WagA/3WzQf80WgD/PlUV/z1UFP8/VBT/P1QU/z9VDf9DWRr/OFED/zlXA';
+		set $favicon '${favicon}P86WQD/OVEO/z5SHf8/UiL/QFQg/z5VFf84Uwj/O1MS/ztTEv9EWSX/P1Af/0RSKf9DTy';
+		set $favicon '${favicon}7/bnZfwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKDMgyJmniH/Z6cA/2KqAP9frQD/XrAA/1mrAP9a';
+		set $favicon '${favicon}rAD/Wa8A/1WrAP9WrAD/W7EA/1etAP9XrQD/V60A/1qsAP9arAD/WqwA/1qsAP9aqwD/W';
+		set $favicon '${favicon}agA/3WzQf80WgD/PlUV/z9UFP8/VBT/P1QU/z9UFP89UhD/PlYP/zlXAP84VgD/QFcZ/0';
+		set $favicon '${favicon}NXJP9AUSH/PVEc/ztTEv88VxX/PlUZ/z1RHP9BUiL/P00n/1dgRf8AAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAjblufmqiNv9dqAD/Wq0A/1erAP9UqAD/XK0A/16wA';
+		set $favicon '${favicon}P9arAD/V6sA/1qtAP9arAD/WqwA/1qsAP9aqwD/WqwA/1esAP9arAD/WakA/3W0Of80Wg';
+		set $favicon '${favicon}D/QFUV/z9TGf8/Ux7/P1Me/z9THv8/Uxn/Qloc/zlaAf81VwD/OlUN/zpSEP8+UxL/Qlc';
+		set $favicon '${favicon}Z/z5VGf8+VCD/Q1Yn/z5QJ/9GVDD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAABzrEv/Y6co/2OrGf9dqQD/VaYA/1esAP9YrgD/WK4A/1';
+		set $favicon '${favicon}qtAP9crAD/XKsA/1yrAP9cqwD/WqwA/1etAP9XrAD/W6oA/3i0Of82WgD/QFUV/z9TGf8';
+		set $favicon '${favicon}/Ux7/P1Ii/z9SIv89URz/OVES/zNTA/83VwD/OlUN/ztUC/9AVwL/PVIQ/0FUJf89Tyf/';
+		set $favicon '${favicon}PE4m/4OPcXEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAG6hSv9kpyj/Xa0A/06oAP9XsQD/UawA/1etAP9cqwD/Xqs';
+		set $favicon '${favicon}A/16rAP9cqwD/WqwA/1atAP9WrAD/W6kA/3i0Of82WgD/QFUV/z9TGf8/Ux7/P1Ii/z9S';
+		set $favicon '${favicon}Iv9BVCX/P1Ya/ztZD/87WgH/OlUN/z1VDf8+Vg//P1MZ/z5QKf9lcVjeAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAACVw3tFYaIp/2CrAP9VqQD/Wa8A/1esAP9arAD/XKwA/1ysAP9arAD/';
+		set $favicon '${favicon}V60A/1atAP9WrAD/W6kA/3izQf82WgD/QFUV/z9TGf8/Uxn/P1Me/z9THv8+Uh3/QFYj/';
+		set $favicon '${favicon}ztXFf82UwP/PlUV/0BUGv8+Uhf/Slw0/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAIWzaZRppDD/YKcA/1qsAP9WrgD/U64A/1OuAP9TrgD/U64A/1auAP9Xr';
+		set $favicon '${favicon}QD/W6gA/3izQf80WgD/PlYP/z1VDf89VQ3/PVUN/z9UFP9BVRz/OE0O/ztVGf8+Vxz/PU';
+		set $favicon '${favicon}8l/0pZNP+Omn08AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAd6lQ/2KkGv9cqQD/V6sA/1StAP9TrgD/U64A/1auAP9XrQD/W6gA/3izQf';
+		set $favicon '${favicon}80WgD/PlcC/zxWAP88VgD/PFYA/z9VDf9AUhf/QlMh/z5TI/86TCH/e4ZtggAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAABzp1D/X6Ee/12qAP9WrAD/WLAA/1OvAP9WrQD/XKoA/3m0Qv8zXAD/O1cC/zt';
+		set $favicon '${favicon}XAv86VgD/PVUN/0BUGv9FUyb/RFEs/2BtTv8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}Ak7x3VmugOf9jqAP/V6YA/1qwAP9YrQD/WqcA/3m0Qv8wVQD/OFMI/0BbF/81UAH/PlUZ';
+		set $favicon '${favicon}/z9RKP9IUzj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACL';
+		set $favicon '${favicon}sm2Ca6M4/2CnAP9ZpwD/ZKsA/3qxRf85WwD/P1Ya/z1UF/9AVSb/QVMs/4uWfzMAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHaoT';
+		set $favicon '${favicon}/9qoy7/ZqAg/4CwUvk/WhX/P08l/zxOJP9tfV3IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgqxkqo';
+		set $favicon '${favicon}OoZ50+UCn/dHxlpQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+		set $favicon '${favicon}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//////////////////8';
+		set $favicon '${favicon}AA///////////////////AAP//////////////////wAD//////////////////8AA///';
+		set $favicon '${favicon}//////j/////////AAP////////gP////////wAD////////wA////////8AA////////';
+		set $favicon '${favicon}wAD////////AAP///////wAAf///////wAD///////wAAB///////8AA///////4AAAH/';
+		set $favicon '${favicon}//////AAP//////4AAAAf//////wAD//////4AAAAD//////8AA//////4AAAAAP/////';
+		set $favicon '${favicon}/AAP/////8AAAAAA//////wAD/////8AAAAAAD/////8AA/////8AAAAAAAf/////AAP/';
+		set $favicon '${favicon}///+AAAAAAAB/////wAD////+AAAAAAAAH////8AA////+AAAAAAAAA/////AAP///+AA';
+		set $favicon '${favicon}AAAAAAAD////wAD////AAAAAAAAAAP///8AA////AAAAAAAAAAA////AAP///AAAAAAAA';
+		set $favicon '${favicon}AAAD///wAD///AAAAAAAAAAAAf//8AA///gAAAAAAAAAAAB///AAP//gAAAAAAAAAAAAH';
+		set $favicon '${favicon}//wAD//gAAAAAAAAAAAAA//8AA//wAAAAAAAAAAAAAD//AAP/wAAAAAAAAAAAAAAP/wAD';
+		set $favicon '${favicon}/4AAAAAAAAAAAAAAD/8AA/+AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAA';
+		set $favicon '${favicon}AAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAA';
+		set $favicon '${favicon}AAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAA';
+		set $favicon '${favicon}AB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8A';
+		set $favicon '${favicon}A/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AA';
+		set $favicon '${favicon}AAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAA';
+		set $favicon '${favicon}AAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAA';
+		set $favicon '${favicon}AAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/';
+		set $favicon '${favicon}AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/A';
+		set $favicon '${favicon}AAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAA';
+		set $favicon '${favicon}AAAAAAAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAA';
+		set $favicon '${favicon}AAAAH/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH';
+		set $favicon '${favicon}/wAD/wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/';
+		set $favicon '${favicon}wAAAAAAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAA';
+		set $favicon '${favicon}AAAAAAAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAA';
+		set $favicon '${favicon}AAAAAB/8AA/8AAAAAAAAAAAAAAAf/AAP/AAAAAAAAAAAAAAAH/wAD/wAAAAAAAAAAAAAA';
+		set $favicon '${favicon}B/8AA/+AAAAAAAAAAAAAAAf/AAP/gAAAAAAAAAAAAAAH/wAD/8AAAAAAAAAAAAAAD/8AA';
+		set $favicon '${favicon}//gAAAAAAAAAAAAAB//AAP/+AAAAAAAAAAAAAB//wAD//wAAAAAAAAAAAAB//8AA///AA';
+		set $favicon '${favicon}AAAAAAAAAAA///AAP//8AAAAAAAAAAAA///wAD///wAAAAAAAAAAA///8AA///+AAAAAA';
+		set $favicon '${favicon}AAAAA////AAP///4AAAAAAAAAAf///wAD////gAAAAAAAAAf///8AA////8AAAAAAAAAf';
+		set $favicon '${favicon}////AAP////wAAAAAAAAf////wAD/////AAAAAAAAP////8AA/////8AAAAAAAP/////A';
+		set $favicon '${favicon}AP/////gAAAAAAP/////wAD/////+AAAAAAP/////8AA//////4AAAAAH//////AAP///';
+		set $favicon '${favicon}///gAAAAH//////wAD//////8AAAAH//////8AA///////wAAAD///////AAP///////A';
+		set $favicon '${favicon}AAD///////wAD///////8AAD///////8AA////////gAD////////AAP///////+AB///';
+		set $favicon '${favicon}/////wAD////////4B////////8AA/////////h/////////AAP//////////////////';
+		set $favicon '${favicon}wAD//////////////////8AA///////////////////AAP//////////////////wAA=';
+
+		perl '
+			sub {
+				my $r = shift;
+				$r->send_http_header("image/x-icon");
+				use MIME::Base64;
+				$r->print(decode_base64($r->variable("favicon")));
+				return OK;
+			}
+		';
+	}
+
+	location /embed.png {
+		set $embed '${embed}iVBORw0KGgoAAAANSUhEUgAAAHIAAAByCAYAAACP3YV9AAAA6GVYSWZJSSoACAAAAAoAA';
+		set $embed '${embed}AEEAAEAAAByAAAAAQEEAAEAAAByAAAAAgEDAAMAAACGAAAAEgEDAAEAAAABAAAAGgEFAA';
+		set $embed '${embed}EAAACMAAAAGwEFAAEAAACUAAAAKAEDAAEAAAACAAAAMQECAA0AAACcAAAAMgECABQAAAC';
+		set $embed '${embed}qAAAAaYcEAAEAAAC+AAAAAAAAAAgACAAIACwBAAABAAAALAEAAAEAAABHSU1QIDIuMTAu';
+		set $embed '${embed}MzQAADIwMjM6MTE6MDkgMjA6MjQ6MjkAAwABoAMAAQAAAAEAAAACoAQAAQAAAKMAAAADo';
+		set $embed '${embed}AQAAQAAALAAAAAAAAAAdes37gAAAYVpQ0NQSUNDIHByb2ZpbGUAAHicfZE7SMNAHMa/tk';
+		set $embed '${embed}p9VBzsINIhQ3Wy4Atx1CoUoUKoFVp1MLn0BU0akhQXR8G14OBjserg4qyrg6sgCD5AXF2';
+		set $embed '${embed}cFF2kxP8lhRYxHhz347v7Pu6+A/z1MlPNjjFA1SwjlYgLmeyqEHxFL7oxgHFEJGbqc6KY';
+		set $embed '${embed}hOf4uoePr3cxnuV97s/Rp+RMBvgE4lmmGxbxBvH0pqVz3icOs6KkEJ8Tjxp0QeJHrssuv';
+		set $embed '${embed}3EuOOznmWEjnZonDhMLhTaW25gVDZV4ijiqqBrl+zMuK5y3OKvlKmvek78wlNNWlrlOM4';
+		set $embed '${embed}IEFrEEEQJkVFFCGRZitGqkmEjRftzDP+T4RXLJ5CqBkWMBFaiQHD/4H/zu1sxPTrhJoTj';
+		set $embed '${embed}Q+WLbH8NAcBdo1Gz7+9i2GydA4Bm40lr+Sh2Y+SS91tKiR0D/NnBx3dLkPeByBxh80iVD';
+		set $embed '${embed}cqQATX8+D7yf0TdlgYFboGfN7a25j9MHIE1dJW+Ag0NgpEDZ6x7v7mrv7d8zzf5+AJOUc';
+		set $embed '${embed}rSjQTNZAAANeGlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPS';
+		set $embed '${embed}Lvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4KPHg6eG1wbWV0YSB4bWx';
+		set $embed '${embed}uczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNC40LjAtRXhpdjIi';
+		set $embed '${embed}PgogPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyL';
+		set $embed '${embed}XJkZi1zeW50YXgtbnMjIj4KICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogIC';
+		set $embed '${embed}AgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iCiAgICB';
+		set $embed '${embed}4bWxuczpzdEV2dD0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL3NUeXBlL1Jlc291';
+		set $embed '${embed}cmNlRXZlbnQjIgogICAgeG1sbnM6R0lNUD0iaHR0cDovL3d3dy5naW1wLm9yZy94bXAvI';
+		set $embed '${embed}gogICAgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIgogIC';
+		set $embed '${embed}AgeG1sbnM6dGlmZj0iaHR0cDovL25zLmFkb2JlLmNvbS90aWZmLzEuMC8iCiAgICB4bWx';
+		set $embed '${embed}uczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iCiAgIHhtcE1NOkRvY3Vt';
+		set $embed '${embed}ZW50SUQ9ImdpbXA6ZG9jaWQ6Z2ltcDo3Y2E3YmU5NS1hOTZkLTQwMjUtYjFiZS1mZTVkZ';
+		set $embed '${embed}jFkZTNiNjUiCiAgIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6NTJkMzFkZDMtNDVkZC';
+		set $embed '${embed}00MmU0LWJiN2QtNzNkMDM0ZjQ0MTJhIgogICB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ';
+		set $embed '${embed}9InhtcC5kaWQ6ODcyOGRhYmMtNGI0Yi00NTU3LTk3MzktNzk0MTYyZTY5MjIxIgogICBH';
+		set $embed '${embed}SU1QOkFQST0iMi4wIgogICBHSU1QOlBsYXRmb3JtPSJMaW51eCIKICAgR0lNUDpUaW1lU';
+		set $embed '${embed}3RhbXA9IjE2OTk1NjE0NzYxOTc3MTAiCiAgIEdJTVA6VmVyc2lvbj0iMi4xMC4zNCIKIC';
+		set $embed '${embed}AgZGM6Rm9ybWF0PSJpbWFnZS9wbmciCiAgIHRpZmY6T3JpZW50YXRpb249IjEiCiAgIHh';
+		set $embed '${embed}tcDpDcmVhdG9yVG9vbD0iR0lNUCAyLjEwIgogICB4bXA6TWV0YWRhdGFEYXRlPSIyMDIz';
+		set $embed '${embed}OjExOjA5VDIwOjI0OjI5KzAwOjAwIgogICB4bXA6TW9kaWZ5RGF0ZT0iMjAyMzoxMTowO';
+		set $embed '${embed}VQyMDoyNDoyOSswMDowMCI+CiAgIDx4bXBNTTpIaXN0b3J5PgogICAgPHJkZjpTZXE+Ci';
+		set $embed '${embed}AgICAgPHJkZjpsaQogICAgICBzdEV2dDphY3Rpb249InNhdmVkIgogICAgICBzdEV2dDp';
+		set $embed '${embed}jaGFuZ2VkPSIvIgogICAgICBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOjVmYjgxZDA2';
+		set $embed '${embed}LWUxNGEtNDBlMC1iOTA3LTY1ZmVmMGMxYzNhMSIKICAgICAgc3RFdnQ6c29mdHdhcmVBZ';
+		set $embed '${embed}2VudD0iR2ltcCAyLjEwIChMaW51eCkiCiAgICAgIHN0RXZ0OndoZW49IjIwMjMtMTEtMD';
+		set $embed '${embed}lUMjA6MjQ6MzYrMDA6MDAiLz4KICAgIDwvcmRmOlNlcT4KICAgPC94bXBNTTpIaXN0b3J';
+		set $embed '${embed}5PgogIDwvcmRmOkRlc2NyaXB0aW9uPgogPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}CAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+		set $embed '${embed}gICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg';
+		set $embed '${embed}ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI';
+		set $embed '${embed}AogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC';
+		set $embed '${embed}AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiA';
+		set $embed '${embed}gICAgICAgICAgICAgICAgICAgICAgICAgIAo8P3hwYWNrZXQgZW5kPSJ3Ij8+S1YcuwAA';
+		set $embed '${embed}AAZiS0dEAAAAAAAA+UO7fwAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+cLCRQYJ';
+		set $embed '${embed}Gh6iCUAACAASURBVHja7Z15vF1Vefe/a9j7nHOHJBASwiygjCqiUsEZhCp1HluLFYdaW6';
+		set $embed '${embed}36qq8g4OtEnUDrPLVVsICIRVvAqVgBRxTDFMAgMxlICGS4wxn23mut5/1jrTPcmxsmSXK';
+		set $embed '${embed}TZn0+O/ncc889Z+/1rOdZv+f3DAt2jB1jx9gxdowdY8eYaZjt+eH+9sKPfveIVxzzgpbz';
+		set $embed '${embed}F738Va8+4Jpf/Ob72+uzqu3xoV76nZPkzmqSce948rzdy19+9/J8XhNEPEcddvjvzjn9i';
+		set $embed '${embed}0dub8+st6eHecfFZ370yHPeLhfJGpbY9dw1HJhQZX6fKmnWYCJX/O7mG572+FceLR/6yp';
+		set $embed '${embed}lP2aGRs2yc/D9ffM0vVtx8wVX1Dj5MwpABH6DUHDO6D5d968fUQ5259Tprmk0WZQ3mOsU';
+		set $embed '${embed}83eC33/vJdjEHdlt/gJed/145f+Vilg0F0AVYDVLE7d+kx6sZyspwn6uQPGNSBGU0QTyP';
+		set $embed '${embed}f/mxst+ee3LxF8/epgW6zZrWl11wsux+7pvkv/S9LBvqgGmD9hAqEBONTRBEBIICDEEUo';
+		set $embed '${embed}JlQwoQSxqSiqQM33XMH+77o6fKOj5/20R2mdQuNf7jkY1+6cmzF268zbchK0A7wG4NxUV';
+		set $embed '${embed}BZjh7ei8vP/x/muiGCSO8dNdHUlWa802a4bjDa0OgIc4dGOf7oY591+t+951c7BLkZxmm';
+		set $embed '${embed}//PJx379z8aVLGwKhCbmN+yBmwLAEUB4QEMBnHD20F5effxkLqiFsiILM0rtFhNxqxlXF';
+		set $embed '${embed}Olexs66TicaHwF5DIyw+90fbzPxsE6b1L771TvneimsvXTrswK+DugbfictQ9LRrqmvcm';
+		set $embed '${embed}SaKDLASr7o2tBFKDaGW0cExoTwdCyvbTQ5+2bPlr979ljt2CPJPHC+88L1y0PlvlmuHmt';
+		set $embed '${embed}ysCyg6YBvgFeha1EaVNJEwzdCoB7U3be/oVCWTZQfxLuq0BCaUpi0BZw3X3nHzvge85Jn';
+		set $embed '${embed}y7s+e/u4dpvVhjnf+92c++Nt7b//IVfkEZB6CB+8hq4PR4ByIB22iCe0O6T6Rj0L2wlHD';
+		set $embed '${embed}e3Llty9nQTWCDdIzqwAVYGqGlbQR7xgNGcaDVpaatRAcNYGazqCsaNg611146aycs1nlf';
+		set $embed '${embed}py++Oz9vrnkN7d/Yd0tUK+i0ExEn1gTUWlVgFKQZ1Gg3WkVM7Ask4AF6j1BByqlqAa+z4';
+		set $embed '${embed}WAOEFU/PsRnTOsDb70VGVFSwecVRShwiihChUHvvg5svf8Rfz07AvUDtM6kxn993fLGTf';
+		set $embed '${embed}+8vY7d9Jgm5BVUbPKDuhkJp0DrePPVUlPWpBAzoONvvktFAzVciarMsle0ywLiqpCKcGa';
+		set $embed '${embed}iGQnnKMInpYOmJqhY2DF+Fqe+NLnyYknvfOKHaY1jddfcvqvfrH27mfcNSSgCjAOlERTq';
+		set $embed '${embed}v4ETl8MeMVRw3tx5bej+5EFmbKGM4FKwf066ukuwZBJXNtBRaH7GdZ+JhE0maCoeeFlz3';
+		set $embed '${embed}vBKz/5rlO+/79SkO/92ef//tKVN3/1BtWCugJVgqpAhehWGBt9wUd6izMI0kgENFlCtlo';
+		set $embed '${embed}slQoUKjChPLuEbIrmdpeRH9Divh8KOYbhzKLbjrl5g6u+++OtNp9bfI/81JILat+95orO';
+		set $embed '${embed}Off9gTW2A3UAB96BTrcTqkSvhVlhtswMmlkoCKFCXEB7R+YVj3/Jc+Vxe+wV/vOr52zx8';
+		set $embed '${embed}OAW3SOPv+AkOXPJZZ2rhyvWmDbUPbgmVO241zmf9sEM1OyigU3SwimTpzRt7xidM0qhoE';
+		set $embed '${embed}PgpuV36cNf/Xw58YPvuWK7E+SbLvrIxU8+663yY7We+7Mm1CpwY0AZZyi3YJPgrIHMRnQ';
+		set $embed '${embed}6C0dN+lelFVYbVjTHaOpAp2ZoZbCBkl/ccM1zDn3Z0fLhr3/2sG1+j3z/Lz73ip/dfsP3';
+		set $embed '${embed}ltvA6pqG0IJcQyihlkPRBpX8QgyYdCkDrvrT7u5R3COZtlf2CAUCubEo53AhkJucSivyp';
+		set $embed '${embed}LmjYqgFYe7QML8995LNOtebzX498Tv/IJ9csRjmqujQBx/9QhXA1mCyFTVPm+Qv6ii4su';
+		set $embed '${embed}gLNMhW1T7/ELRT+4DkGcoHKmJUpRE8VhsmgFI8rjPJQS8/WvbfbU9++JVz1DZhWl/7/VN';
+		set $embed '${embed}u4VuvlyV5CxoVqGY0oVbiEnceigJqtTRbHkKIQvMSTWyWRfCzDQyjNdoFgki6Am1jCCJo';
+		set $embed '${embed}pegYzaQEJnEsu+9eHv+S58o/fuLUT8xa0/qun376lEtX/vHjS22ZUEEnCk75aOaEFBek7';
+		set $embed '${embed}x9qmeqsd/37brhJqUd+h4+CaS3Uxho4k8kFT6X6tF///WYaWNJYgVzAiObEV/2lPel1f+';
+		set $embed '${embed}9nhSD/6bdn73XRH3+37PemDQ0Nvhl50Mz2BcJUEqZnBzQb/z4kgSuJv99KguwKcUIJo6I';
+		set $embed '${embed}eVJA9/nbgfrWYGckEiIRCwyt232kXLj/rQrVVTeszz3+XfODOXyz7/VAThiqQSbAK8jxO';
+		set $embed '${embed}ZMj6V/ehuresJAq6d3WFaUBsev/sztbsI9j+vWbSvzZ+gsCkjldLBVyuuWvDGg588bPlh';
+		set $embed '${embed}JPfdv0WF+Sb/vOjFx94zlvlV2Z93AdtkVwJFfe8oopa1YsRDui/YkA1fbwkvdYlvjWRU9';
+		set $embed '${embed}3KQorIc9PKUqiNze8DjUEtLxSMBY/OLB0j3HT7bU88/KVHy6mfOf34LWJan3P2O2WxbdL';
+		set $embed '${embed}MO0AR3QkfEirNozvR1awwGLkPA8S29FkbGVxPCUSr9LOEh0iGb5498qGuf0PAPwxBdk1x';
+		set $embed '${embed}TQwEz1ybUxWOUWPRQXjMbntwyVe/rTabRr742yfJlWaSZqMC6yEnRiEkgKlF1Om6H+tAd';
+		set $embed '${embed}a9pAhH62tq7BRXfoxJA6l7bwPADQnqoGpr1UK9h3FeY3DAmnqaGm+9bxfu//KlXbDY/8j';
+		set $embed '${embed}7fpKypqIk+OfE2Req9j0+UmWgWyxJsxRR40DNT0752UGAqxRhls/MVD4GW81Pu36dFt7G';
+		set $embed '${embed}wNBMpU2FCycB96yka3jXXQcU9NIgjz3PKyjOpPZUKZEYh4vjhFZd+7+FMwEMW5GlXfPW4';
+		set $embed '${embed}c1ddF0NNkHy9dNPBxf+zPAq06kTaTZKWdSdEmQFh6mRykxlEDwCewdeSVFWIgWW9CXMrg';
+		set $embed '${embed}xuxSdouA4FlemBkisuTRDQqUKhALYWxDDAcDBlQDcDsAIz0hBmoevukT8KcinRn1MZ0D1';
+		set $embed '${embed}Zr2kVBMJrgPWIzOiJorZisqs3D7FRVsfBuKWL6oRCF2EOiIYGVEIO+OrEyksfJ0mVCqQM';
+		set $embed '${embed}4hwCqE6dMD4PLObAZOLg+h0MW7ceCnRcBirHxce5du4rlE2v4ud/AxDAxi66WkG2ZQFYX';
+		set $embed '${embed}BWsbUbIPSah+YAINNYkT75Pw61YjAk0J1JSNCQk+MIJhJGQY5zjkkMdzyEEHMzQ8wl133';
+		set $embed '${embed}c2111/NhlaLQkFLByotaKUJBNBCvRTq2iISNmGKk4ZLBHU6eVo9JksEpTSbzbTGvU76Dn';
+		set $embed '${embed}5Xq2aMFaR9UHXfV/W1pTezBryBDhzqMt521DEcf+BRjDCCTuC9oCRDcVe5il/ecQ3fvPb';
+		set $embed '${embed}n3JSZqPWhiJxtV5ghQOnA5jHj3IUpkK42A+PXqUq8DtSBCVcylNcxxhJaFbvvtIDTTno/';
+		set $embed '${embed}hx76BDJlAY1Ccf/6e/n6Wf/GDy6/FJVr2iIEX0HdQrtgtD5C0e6Qmy0Xwdm836RTdpseR';
+		set $embed '${embed}KtENKsCtCLrs3+ZccpL/opj5h1MjqZBnvKohBqagsD++W7sc9DzedbjnsxnfnweF4zdHS';
+		set $embed '${embed}UjIQpQFJg6iIusEmrK402oGL8eFKZWioDCaENuNVUZcAFqLrDbLrvwzx8/kz0X7IZVkU5';
+		set $embed '${embed}0eIIIu+20gNPeczKmlnH+Ty4iG8qiZrlA0AbrhS0N0zavs6am03ADr4sGm7OzrvGqg57K';
+		set $embed '${embed}M+cdQgNDg4wGhmEyagGGscyhjkWxM8McaBbxwRf9LX8zZ292KSy0S6g1+hbCZvGpJC6i6';
+		set $embed '${embed}XmtPbPaXcna4EOgWVSMaEvlPdYYXv3iV7DnbrtTt3lkGhGMQF0ZAgGH4w0nvI4F8+eTB8';
+		set $embed '${embed}VcZWj4wPwso6pKajbbTgSpPP1809A3uVNoq4ydWoHnHvhk6mhGqDEk9ahQXmNUjvIK1Sq';
+		set $embed '${embed}ZI8NYnzGHYfZjPqce/waeU1vAonxnmGhBYyTt0cQMg0xPcxA21pEgglKKhtJoH8iUSimT';
+		set $embed '${embed}hmOPOYYaBgMEF+GOVQbxnhzNEJZF8xbyZ4cdjjhPFgSrM5zfOkh789MnMu0aHKVjQa3BX';
+		set $embed '${embed}nN2ZZgalgzEonLbB1TKYOvDcS1INMt1n/EYu5C3HfdaHrNBoLYTlFX0XV0BJoPKPSDt0X';
+		set $embed '${embed}UhKu+wNuaxBhHqSpGJYtd5C2K6ZAhRu0IAF+OPwQsShIBn370ekxZFIO8S4jpGP8x2I8g';
+		set $embed '${embed}p/KnZWJC1nLIKGA91sp7S+NClWw0uCKgEknUEdiFARs7T5h7Eyce9jpGOjdqem7gvt8uU';
+		set $embed '${embed}iT6gfXpjndRKxWqtoiQPgq4CubKM1htxWWmL1hbvBasMmY0fYrTBaoPFYJXGaI3RGVUKv';
+		set $embed '${embed}WnRaNHbkUZuShu7nGvVJs8sucnxzkfXIeVgVcl7UNpSEgVbdXlYYzFk5CHnqL2exKlHHA';
+		set $embed '${embed}ttA4WLb6g3UshMP0CcApxWZMamYp4Ma0wULOCoUKk0T2uFUgM7RAgEhIBCa42IQiuFN4Y';
+		set $embed '${embed}xX6GUIsiWBTxbYNl0q6X0AA3nI5LNMprOIyJYG8NekhEFpyPbF3TMBC8RnPJUyqNUdBkD';
+		set $embed '${embed}lhGGOfGg43jf3oeDjEYfspL4fVonwRh0MITk15XeYdPvggha6542RS9LsNPjFhKBcWQW1';
+		set $embed '${embed}cDCiH/vQyCIomZyJAWVt6M9sutHzvRQkaFp6wiKNAHpEgvp0ghWQOMxhN7UBhW1JtcKLY';
+		set $embed '${embed}ohDP/w7L/klbU92NnPgWB7obF6stVdIdaNQWUZLoSNeNIZjYraeEfoc0JhRpK92gp4R2/';
+		set $embed '${embed}2T+/SFkqlzADTp+YUtFJocnCKbLpMACX9n7vxv64wFZAHmMsQC9mJD7zgjTyrHGU3OydK';
+		set $embed '${embed}ICgyLGjNTsqQKU3hKlzwVMFvIjKxMYH3oKT5lKhG2CrC1Fvsa6aFcHoxyO7vB8CBJmAkb';
+		set $embed '${embed}ZKJZjUDe21cGwoRH3O2RKMdPC7fg3e/6ET2autkYqGePiOIYJIJ1Eojtfwh3Hd4SBNntm';
+		set $embed '${embed}6O2JYU5AMJscuja4KKl+oKTaXYZBgIThN/rwRCCKAUwQUaNsOieNK8/Xjv817DM1o1Dsa';
+		set $embed '${embed}QYwGLL31iBSPbUzj3gBoWBoQpSpABs6HkwYQeMFs4S34zC3JgD5FBJCsDgokRESHSZYNM';
+		set $embed '${embed}HgpEqSRMNRA5STevNR6FtrqnGRbN83Z/Mic+5Vjmh5xOVUb6TCms70+uqdzDiu5PgeIq7';
+		set $embed '${embed}ukG0Ml/nIFp3qJj83KtktStm94RNp65poagNF5FWj1DYdL6qlLsziqFUhYtAcGjMDFCIA';
+		set $embed '${embed}ZjwAdPMIFKCQbNUMh49WHP57bxFdyybjV4R24aaBQ1EbRR2FzjQqBQniytnLgQYGZ4E1+';
+		set $embed '${embed}fEm6cJryabB2gs4VMq5+Z1UnzNRxmWMnTirA6Gto60DEVpfZU2uGTNxMq0EYNACVFg5wR';
+		set $embed '${embed}apz4rFdw6Lw9mVdpRoi+Xct7JoPvodZsE/TPTBPTM6kyuKfPjhLTzX8Xatq3qYRg0xiVa';
+		set $embed '${embed}J5Myjyz0nU8NCZlkyg8FQW/umMxP7/tKkocBSWBbgGXRoliiDqhTO4qin2Yz5uPfBlPmr';
+		set $embed '${embed}MbWRWlUOWWiRTJz/AECSilKUQoif5f7gU94+SoB1iu+hGa6m0l+jEl4mEGildVAhY+AR7';
+		set $embed '${embed}ZKFCiNXgXUvQBymHN+VdczPUbbqMi0JYiKnsI2KAhQJ5ZfIiEgBHNnrUFnHHKh9k5q1PX';
+		set $embed '${embed}Ob6sHmRCYkhMb1JoKrk//ekrpwWB/fZpWh85UBLvsUaTpyDz+naTsdzz2Yu+xdJyORhNF';
+		set $embed '${embed}RzahwSIwAdBjKLjHUZleIRD9j+AD77nfTSqwKjAbrU6hJCywlXPxGbT8qkD286Y1e1ZlI';
+		set $embed '${embed}lhIyVgUNhazgrX5O56m69fej7Lwv04QwxZKSBUGKNwgDI2GV+wXjjuqOfwt695LTurnGq';
+		set $embed '${embed}yYCeTAaaX4t8luZVSeLNpuLNDkI9EJ0OFMiYWNONRuWZiKPB7N8Z/jN3Nv//iEpoUbAjt';
+		set $embed '${embed}mH1nLd53KT+FIBgsNVtDucBbXvsGjjvymcw1ObnoxIfqKan9IoJPe+wOQT4aQpzCccZgr';
+		set $embed '${embed}3IVrTIWCTUbnh8uv46zFl+M154OnoDHGENIsciuMEIVsCbH+sD/e/fJHLbfAdQqIRdNY4';
+		set $embed '${embed}YpEBHcNmVYZ3sLM2MjaW0BHFJ0WGSyRCg4bqh3+PTSy7lk+W9YR5NKB7z3NLIcFTwGi/c';
+		set $embed '${embed}BbS1UHoNhbl7nYyd/gMct2oMRFFlPM6MP6NTWc+q3W0EKikoCTkoCnsxacBJLE/CQFdw3';
+		set $embed '${embed}Ejjjsgu5qXUnBQXaKEpXkWtDCA5rUrZBiIBIi2bv+bvzkfeewmiwDKVik0HXwQS2uTHLB';
+		set $embed '${embed}SmICiit8Xi01hhtoV2ByiIVE8ZZ2mjzhR98i+XFvbQpMcYgATJtUKRq6TwmVKsg5CI8Zf';
+		set $embed '${embed}+D+eT7TqURDLnz1MRQ6ZgxoLTa5vqfzmpBWoQQQkSsGCon+JBK17sOm9ZgPbdXGzjrR+e';
+		set $embed '${embed}zlnFaUqU6oAh6gkhKqVWEQEzPCMJzjng6b/mrE6jrLCZfBaGWZUjlUGxbXYln9b264Klr';
+		set $embed '${embed}i0JTEf1Dl9uoiUqBs3ED1Yal1QT36ybfueIiRGvGXAEoCqn6XaycjwS7h0wZatrw5tecw';
+		set $embed '${embed}Auf/lzm2Bo4wYhBBSHbxnRyVvc0z7TBOYcxGVZluKCY6BTRexcToW1VQsPyjL334VvXLO';
+		set $embed '${embed}Hw1q3oIuONzz+BsdBirq5jLHhfxRQNFVGpQmGCpqYV//cf38HKe1dx/R234jsd8sYopXj';
+		set $embed '${embed}qSu/QyEdFI53Dmhx8zI2p1+uM1muxFKByzJGc5y16LKxt8etrbsQYy2rr+M7vfsrF11yK';
+		set $embed '${embed}1oYmJQ5BtMLYmGilbPJtlMIC82yNT53y/9hzdCdGTI0QBKO2rb79s3uPNHnPp7QYQhUIr';
+		set $embed '${embed}ZI9TY0nz1vELih+dtVVsK4JWHyzYBXCvXmbL//oXK5bdiMZhgofi6nFgVK96BqpzeeQyt';
+		set $embed '${embed}lz7i6c8YEPMbdeR2tNid9B0T1qtyapRZ2JcS1TeR47b2cOyYe55sYl3HH3XRHsBAMyBLZ';
+		set $embed '${embed}BzRiWywT3mSZfPPffuGfsvl580yqNl9BrW4DWKK1RPqBc4NB9D+DD7z8NjUWznWqkV4wm';
+		set $embed '${embed}BnQmVvRBSNP0z2CtZMrlMGJiDs60BCydYpjGgktVVfWsxj13ruTSG5fGPVJnMQFW2+QnK';
+		set $embed '${embed}gocaGG5caxwk3zsX/6ZCWnR9iWeWCIQUtJB/JsInKzVBF9x5BOP4K0nvilVg/Vj4TOVsH';
+		set $embed '${embed}hC+n1M7egmhz0aZEIum0mQQYVGyg6eJiDdP2djSgGqiVlTIYDKQbKYHKolos6kFtqD8aF';
+		set $embed '${embed}HpykF3nuUkl7lcmZjOdvYWJPJlqeua+BS2ZzOQKp0bEQRF4rKCWgW502uLu7hzHO+jBih';
+		set $embed '${embed}EodGUTmPAyrlQQUEBxIYMhlW4JXHvzgFnGNhqxZQA2kmomLObdXrHRBoEKjp1FovyCPKN';
+		set $embed '${embed}O/mGGaiH7axfBjvDlM1b0qRDgNFr36Q9Y6tyHySkFaxx1yoUjMlC9aglIKyirUWgNIzL0';
+		set $embed '${embed}clcSFlaVLrU8oQuhXNnt6C0xU36ha/uvtGvvaDc3EqcqjWxmpmq03aLxU+2lqsSpnRM02';
+		set $embed '${embed}Q9BknH+0JYuIhMW2EdlWRZ5aOqF4GwqwzrTre69SHmlIG4KfFfny/HFz81AWhE21G4D4E';
+		set $embed '${embed}bzTkGVprXPBoNa3ZUvrCoELKNo+/68xk1UOqMwnJu/IFqzLPt6/+ORdddznjtFHEPB3vA';
+		set $embed '${embed}ohBqxytcpxzQMDaWDink4mfnjXXL9cNVFWFsoaOtrS0YYNzdKyOXS4f1Mr5KVd346nU9F';
+		set $embed '${embed}MTHkVBGtETvYNRpsTA/cYdO7o/ax21UusozFDGXnNax14DIpRWU/rY+UN03MNUt7iGmIY';
+		set $embed '${embed}oqdJCVKCjQhLgDJ1Cgpm6yFwFec6duuKavMNn/uscrl1xE44K50ussSgUvooWw9g83guB';
+		set $embed '${embed}HEETUL0J7akjKiVp2aTBlfdMViXDI8NMBEcVQmSg/oRRKjaXad2YCZ06kZuonesCCpF+r';
+		set $embed '${embed}k5VxdI3nTM+2SHP815E3ihNVXmU1in7Ma7OLrAI09u2zPTA3RbaOlVGVy2oa260LT5x3t';
+		set $embed '${embed}e4rXkP3oAry1hdpeI688RgtpMS8KgpaZtTH92E2F9n2OYoH8g0rO90ANg5z6krzYP17tJ';
+		set $embed '${embed}i0BKD2xVQKN+7NptpNTAxswkdWK0qNUbqvRxi+84uijG1eMeVxINYOp4/33V3QGhWBZbE';
+		set $embed '${embed}hWZZD6kOAgGY2rTvwW1Xsga5gXKSasRwU7mOj/3r51ldbYCantKvSVwEXYZUJSQR3kovv';
+		set $embed '${embed}3bqtmKB3XZZwNBQztx6HfA06hnj7WaqY3mIDNYmMcnmcD/ouh8P5GLM8JoxqWDVdsurmJ';
+		set $embed '${embed}fPodESnrtgb66//gakqBjOariqilZYwFhLF7h2L93t+za9Wd9GPezTH+rUK1bSH0+sZ3w';
+		set $embed '${embed}449qxlXzuwrOYpMJZwadC58xqjCi0sihlEaXxSuOUwqnkigxcGkVVFRx68EE84ZCDwEC7';
+		set $embed '${embed}6NCoWYwr+4ISPeNlBjSzJrEVzCMtWH9kpvWB7Pcg7NbJuHiJwKPw7KZqHDG8ALuhyRVXX';
+		set $embed '${embed}83CYFO4KZClk3VUMnW9OraUnKhEU5+STzpdoH6qMLVNwEpiD6ChOu1ykttqgUtvu46v/P';
+		set $embed '${embed}A8JugQbCy1Q0BcPMXH+5g4HVA90+d7wozZ5gWOpi9o+pI15QRHH/lUHvvYvbiPDkWuont';
+		set $embed '${embed}D/+iJTbkcg6a2r6Gbyf3witGN0hu7jf+8p+c91+qxua7OY2Si46JJdcJRC/ek4eGn19/I';
+		set $embed '${embed}xPpJqAxDQRO6KYpaR8tdpY+WBH5dIg8wmKCYrwb73E3XzIE9tNsjVhkofbQIKmbJLjcV5';
+		set $embed '${embed}13zMy5c/N9M0I63W5ZoY/GloHWGRuGl72R1hel1wCkoCYS6YlVo0q5rLh9fxYZRy3Of8R';
+		set $embed '${embed}Rkbo0WgSrVdBY4KhWoVOgdf2gwaNGYEDMVcgyZxGuzEQIzamRXgHktNftRMDERBVe4RJI';
+		set $embed '${embed}Ow/A89hmay5U33MAd96wFJ9TJ2cvUsMag6hllqMBXID4qsk/fEwLKmBhXDCE1EtKpmb2a';
+		set $embed '${embed}6sNON7WptC6WvQ842QomjOcPpsO//Pf3+P2KJbQoULWYUmmyaBnExxTJWgoTZd2PFcEn5';
+		set $embed '${embed}N7yJaWFNaoEVXK/Lvn12Goee8C+HP20J9OuW1oExqiodIjuVWpU0a2ObtRyggiV9+Q66q';
+		set $embed '${embed}MxZgsIssdqx1yY+Jg6aqGtJ0e/DiHnmTsvghtu4u5bb4tpGkUBytAxhnVac2/RYl27SUe';
+		set $embed '${embed}H+DFGDWCVADWDV4JDaJUFQQfK4GLv85lKEWY680UGGzXpvuuiKu7XHU4/+/PcMrGSJp7K';
+		set $embed '${embed}eooqRP6ix7Qk6i2A8vGcLI3QoUOlHK2yyVhoQ02Dqshzze3Ntaxuj3HUYQfxtMMOxg9bx';
+		set $embed '${embed}pRjoqFZU7ZwWggm+ozjrXacTq0pXVSAonSbW5CmX5xTSexxU7lIwXWBSLviifMWwroJfr';
+		set $embed '${embed}X4WqiPRnMrxPp+F/uYN73D5Tk3r7yT2Dy7QKhwroMYQWVQ4Qh42lT8cfltjIeKCULs0Py';
+		set $embed '${embed}g52LJxuRFD6zEz7hbCtq58E/f/AJ3+7VM4JCcuFhCFY1qCOA9CocxsZlAiwKF4pY7b6U2';
+		set $embed '${embed}0iBtsBAcTTztXLGaJmvaY9xTjXPcU5/Eol13wksHnyvuUyWToYysloXMmNgfXSkyY2J+0';
+		set $embed '${embed}hbTSGOgU0W+swjQ9hy58x7sMTSPJddcD81O3CNb7Uhum3rcq7JadEsyzV3aceEvL6WDxy';
+		set $embed '${embed}E47ZFcUyrHGAXjFExQsrbawK9vvIblypHVbCQX1GDjXgbMrJnW5FdmBmquYETDH9sbWN5';
+		set $embed '${embed}ex4fP/gKrGWOcFsH4ZEsdohzKCkpHU+piGwhuWnMb1991C4UrwJfxazILZcGkVKxSjhtN';
+		set $embed '${embed}h7GG5g/jaxjddR7Pf9bTyeY1QHmaBjo4xCrGXYdJX6ByTUcczlcPV70e2nj665//1Ctb9';
+		set $embed '${embed}74IE1JXqUSDmdhPbr/hEfYfnsdVS5YwsX48Re99NL8mi/97lyBpOnFOIhfrJ1uEsskT9z';
+		set $embed '${embed}sIjaYDOIQykZ5jNPncWV9hydplrGsoQkgtt7utQLuFQT1iu9uF0tOvmh3skZ4cfaUpg5D';
+		set $embed '${embed}ndVZVHVrNCW6+5Q/svc/uzB+aR0UVwZESCgIVAdEwScltE/fw6bO/wopinFtJ55j4Mmpv';
+		set $embed '${embed}Xo/hFe1Ae5ohMCGeoGFiYpz9F+zKIfs+hjuWLafKLO2yw7yhIWqZYX2zzXCeowNsuPnuj';
+		set $embed '${embed}zzqgnzW3zz/wF8317wC66MAuuBBZzx7wR5ct3Qp99yzKrYQK3z8vwv7q3QYi4TY77wXG4';
+		set $embed '${embed}ratLZ0jN2zmpUr72LhnguxjWEERYeK3991LV/65te4be1Kbs8rSjowXI/HEaruya0DNZi';
+		set $embed '${embed}Dx/N2OcseYdqNuuies48EKm0I3jNk4K4N9/Gba6/illW3k40Mo0ZqZLpGhVAgrCjW8ZPF';
+		set $embed '${embed}v+TT5/0bfywnWTdsaOuuz5DuJSSeykaNjoeXlnQySymeBrB+YpwjDjiInes1Vo6P06wqd';
+		set $embed '${embed}IhIuF7LMGVg7OZlH3m4+PNBx0k//dwJ/776xnNX1100a8AT5+/BkpWrYNXqFN2oQacNeW';
+		set $embed '${embed}NqVbIkEOPKKGCVJ62OHSPnqmEakx32s3VwwsjIfLJGnbVja2lVTUZtjfW+xR9r4JlMbT0';
+		set $embed '${embed}V+BlaZ6Oj26Mkfv4g+OkpZ3q/Th0lbULdzjPXGMaqioXZEDt1FHN0zpysztyhEVrtNmsn';
+		set $embed '${embed}x+nUNfdLybosUEgn1p50z7YUiUDPpT7vSvpxU5tHYNipWJg1qBeenbNhFo7O49ZbbufO1';
+		set $embed '${embed}Wtp1Gu0xyZ5XD6XWy+8/NFvvLvz3AUXzb/HsiHAwXN2Ym1rkiWLr4lI1RvqyhKUobT1aX';
+		set $embed '${embed}jD9HfiLKPfJjutowBjoUNRhzslnhUyWa1iwsGogqomZOKZMNKLNfa3PT0F0/Tdi/Re9MZ';
+		set $embed '${embed}H9w4u3y7/68ven49J1KQ1UrAmN1gJNEITJtfGJFehawAAB85JREFU9zRCbLDb/Q6TwFCv';
+		set $embed '${embed}kSH9c73ExChIkP5WojqQwRqakCmW6cCiVkF9wTAvPOAAfnbNtehGg7Jwj8gjfEjjpee8T';
+		set $embed '${embed}8K8nEuWXkuvRVXhmW/rjLkK5yWuTgl9szcFeKQJ6O1l06qZVZg20Vs5E0WZaQvFT+VBe/';
+		set $embed '${embed}7qDMyWJGZL0klDWvWPlOpF0FM5fuHZJxth2Fnm5yMMU2PizlX8+uvfV5sFte4royctu+4';
+		set $embed '${embed}WKDRIPbXqVKz1Jc4SyenuKu/uWz1k6fsP1T0rK0zXEp3MpGb2pRP5aaZZDxyHMXiZPnLu';
+		set $embed '${embed}9pJFx8x4iZVlMb1AIGiMWBbWhpgoC7QSmp0m453xhyXEhy3Iz73+g2cePm+f/3mCH2Yk1';
+		set $embed '${embed}GOHKVVLTnwyNVrSPqg2sT9twi7M9N7ZILxNtAid8XlkmgaLiuSISSyUC+AT0ArRtHvvmX';
+		set $embed '${embed}CO+bU6lBVDaF541LN2fzTp7wccT/3ICbJSl6yqefBFah5vesUyeB8x8QDgqQ+Yys5gj/r';
+		set $embed '${embed}Bk8unmNqtfFxENx4q082mmXkGN2qcmCyT0AukjxhFsNCSAFVFVhumalYcooY4fP6eS857';
+		set $embed '${embed}+z8f9ohv9ZGOd33nE6f8bOnVH1/TUKzRHooWNIYSBzuwkmUTgtxIE2ebIMM0DdO9XKHOJ';
+		set $embed '${embed}mfQ9726riCDBx+FaJSiCBUdiSkvuzjNfrW5XHXSuepPXnN/6njN59+x6g/rVi2aGK1xd2';
+		set $embed '${embed}s87pWuSF2MpzVLmv7NatB9YOCoiNkryCnnfKnpqS+hv2N1k89SqiY2i+knFeyb19ml0hx';
+		set $embed '${embed}72J+99BMvft/Fj4rxeLTGsZ98syzvjHF/TbO2e4p598EGj06Y3nRoeo3FbCngV2FmRIqZ';
+		set $embed '${embed}GjabHtHv/Y1LibndtqM1sjJwqBnmkPm7L/32Wz99yKO6Czya4/Qff22/7/7u8ttvswVt5';
+		set $embed '${embed}VLBjY4gqHIx5FW2I2WXyOhYGpd+7p4d0s27ma1dGXquh49sVbuVwnlVwgemH9zuOBbaUX';
+		set $embed '${embed}YpLfuN7soP3v1FtTluZ7OMN55z2o9/d/fNLxjTnpUh0Xq1LD6cK1NiVHRVtMSe4JEdUZF';
+		set $embed '${embed}4Vuk4AJmFAmQggiIShValg210cqEkuVgODszmsEuV89Ij/9yedNwb/ea8rc02XnTGm2RV';
+		set $embed '${embed}p0krUyz17eiq2C6b0m3lmfaQbjC1e1yv3tr1F5tKJUn9Zq2JcVGVRfrNJWFWjr1snWFdw';
+		set $embed '${embed}7Y8xz/+iDec+eqTv7Ul1tdmH8d87A2yzHe4y4RIHlDQS6n0XVJb9bIOhvKclgtb+ZwzMx';
+		set $embed '${embed}WNqmkgKASoDcVm+DZnuFUwV1kWmpy8Ujxu4T5Lznv7p7f94+unj1Mv+uLxl1x95Y9W5IH';
+		set $embed '${embed}1tkua986B6E9O8IwYwyRqlgjST/Ure7/OoFMxnDVYUCjmYxlVNUa15ZLTvrlF73yrTNMb';
+		set $embed '${embed}vvGBny5edsux47limSpTmCkJUcUOx0GqWUDTTRdkmIpgQ2Rp9gs5c51lntNc/rFvb5U53';
+		set $embed '${embed}arr/RVn/F1xW3NdvkIVrGvYxGdW/VIDpbcy2JkmyJ42do9ItByih7BNxzEHH37S5/761D';
+		set $embed '${embed}O3NgbbquO4T7xRlhYbWJGlkrvuyXPip07ew366Qe5zOlgMD+0z1cZ86mhQzBfNTj7jcfM';
+		set $embed '${embed}Wrf7uu76w22wB01t9nHTBGSf8fOm1567LhFulAl2BKuPxgVURUyxDSh1JhDO9On8/zRHv';
+		set $embed '${embed}RhzswOvSrwrrZtEFHUNL3YIbScjZ5NBp9ttFhm5GQY09nGVhZdk7G+WiD/zrrJm/WdeD5';
+		set $embed '${embed}K+/9N4/3LJ21cHNPHCnTMQ0SZ0i8Cb1ew2+XxAkD6KR3dinGqwkG6iwEukvju7JMFUFtR';
+		set $embed '${embed}pISrl0hrnZEHPbwh7UefkRR9uT/uIts+oA6FnbTOa5H3uDXM0kExQYbfBFm7lDw4yF7uH';
+		set $embed '${embed}cakCTmGp+u1nqU1IgDb1ikm7OUDc1RKm+cx/cwCLJyJxwoK4xXGmO2PfgT37pxI+cMluJ';
+		set $embed '${embed}plk7PnzZNw773m8uu66Fw2nhHl9QZfQrnrun7SSBdZTuC40YuK5LiK9rBjjdBFZCalLgX';
+		set $embed '${embed}eo6QfxZBygV+0udOZXhgPm7rrjgnZ/fazbP1TbR3unvz/34135719K33qgKHAVkKu6bel';
+		set $embed '${embed}CISUA6oc1u+Z9McxnUAAhyCRmjWGQsylWsciUmr7FHsOyv5nH5qd/YJuZom+rT9YIv/h9';
+		set $embed '${embed}ZOrGae3ybPDd47wDfD1L3wkpmoJBnhghGV5g2Hos3rDSqWbB/bQSrFDjh2U946ns++/L3';
+		set $embed '${embed}fXZbmZttrQkiAM/71Jvkj+31rMjpH+A9yL6oqWRRj+AeHN2yB5NDs2Tf+lzmdeBJu+77k';
+		set $embed '${embed}7Pe9vHjt7U52SYFCfChH33pKf+x+FeLlxvHRGqzEsHMYFeRgQD1oDAHkqga3vAYX2P/OY';
+		set $embed '${embed}s2S3hphyAf4njr2R/6xmV3/uFNaxo6VkThIDPpWNgBRErX94yPbYJhDyfso4b45Qe+s83';
+		set $embed '${embed}Pwzb/AN3xos+/TW4cu5f1dZNafLoY8HVVKry11LRFO88cJ+wqGS94wtNed8arTj5ve3j+';
+		set $embed '${embed}7UaQ3XH0P71OVvs2y+pCs+qkzskw19TY11nsZMHTH3PIh77wd6d/dHt67u1OkAAfvOTzR';
+		set $embed '${embed}37/qp9fub6mud8Ku4vFTJQcPLwLl5z2r9vlM2+XD9UdZ1z2DbNi3ZrThoK98ZOved/32T';
+		set $embed '${embed}F2jB1jx9gxdowd43/d+P/ANEkQHfU2ygAAAABJRU5ErkJggg==';
+
+		perl '
+			sub {
+				my $r = shift;
+				$r->send_http_header("image/png");
+				use MIME::Base64;
+				$r->print(decode_base64($r->variable("embed")));
+				return OK;
+			}
+		';
+	}
+}
